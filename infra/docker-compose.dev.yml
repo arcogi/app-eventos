@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  # Banco de Dados isolado para o projeto pessoal
+  db-pessoal:
+    image: postgres:15
+    container_name: app-eventos-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: senha_secreta_local
+      POSTGRES_DB: app_eventos_db
+    ports:
+      - "5433:5432" # Porta diferente da Arcogi (5432) para não conflitar
+    volumes:
+      - pgdata_pessoal:/var/lib/postgresql/data
+
+volumes:
+  pgdata_pessoal:
