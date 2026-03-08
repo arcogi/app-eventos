@@ -348,6 +348,37 @@ export default function App() {
   const videoInputRef = useRef<HTMLInputElement>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
 
+  // Auth
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('admin_token'));
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.token) {
+        localStorage.setItem('admin_token', data.token);
+        setIsAuthenticated(true);
+      } else {
+        setLoginError(data.error || 'Credenciais inválidas.');
+      }
+    } catch {
+      setLoginError('Erro de conexão com o servidor.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   // WPP Sync state
   const [wppStatus, setWppStatus] = useState<'DISCONNECTED' | 'QR_CODE' | 'CONNECTED'>('DISCONNECTED');
   const [qrCodeData, setQrCodeData] = useState('');
@@ -640,7 +671,49 @@ export default function App() {
     notify('Sucesso: Todos os links de recuperação foram entregues ao roteador!', 'sucesso');
   };
 
+  if (!isAuthenticated) return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-rose-500/30">
+            <Heart size={28} className="text-white" />
+          </div>
+          <h1 className="text-3xl font-black text-white tracking-tight">Arcogi Eventos</h1>
+          <p className="text-slate-400 text-sm mt-1 font-medium">Painel de Administração</p>
+        </div>
+        <form onSubmit={handleLogin} className="bg-white/5 backdrop-blur border border-white/10 rounded-3xl p-8 space-y-5 shadow-2xl">
+          <div>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Email</label>
+            <input
+              type="email" required autoFocus
+              value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
+              className="w-full bg-white/10 border border-white/10 text-white rounded-xl px-4 py-3 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500 placeholder:text-slate-500 text-sm"
+              placeholder="admin@admin.com"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Senha</label>
+            <input
+              type="password" required
+              value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
+              className="w-full bg-white/10 border border-white/10 text-white rounded-xl px-4 py-3 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500 placeholder:text-slate-500 text-sm"
+              placeholder="••••••••"
+            />
+          </div>
+          {loginError && (
+            <p className="text-rose-400 text-xs font-bold text-center bg-rose-500/10 py-2 px-4 rounded-lg">{loginError}</p>
+          )}
+          <button type="submit" disabled={loginLoading}
+            className="w-full py-4 bg-rose-500 hover:bg-rose-600 text-white font-black uppercase tracking-widest text-xs rounded-xl transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-rose-500/30 disabled:opacity-50">
+            {loginLoading ? 'A autenticar...' : 'Entrar no Painel'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+
   if (loading && guests.length === 0) return (
+
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
       <div className="flex flex-col items-center gap-4">
         <Heart size={48} className="text-rose-500 animate-bounce" />

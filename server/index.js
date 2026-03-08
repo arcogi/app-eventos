@@ -4,7 +4,14 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 require('dotenv').config();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'arcogi_eventos_jwt_secret_2026';
+// Admin credentials: admin@admin.com / Qaz2026!@#
+const ADMIN_EMAIL = 'admin@admin.com';
+const ADMIN_HASH = '$2a$10$4skmRhqRObXmk9mPuDpqpODiAuDdOHJkJkAYwv6qCH2V13NLLKPwW';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -35,6 +42,28 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Em produção, o Express atua como servidor Web para os SPAs (React/Vite)
 app.use(express.static(path.join(__dirname, '../apps/web/dist')));
 app.use('/admin', express.static(path.join(__dirname, '../apps/admin/dist')));
+
+// Rota de Login Admin
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (email !== ADMIN_EMAIL) return res.status(401).json({ error: 'Credenciais inválidas.' });
+    const ok = await bcrypt.compare(password, ADMIN_HASH);
+    if (!ok) return res.status(401).json({ error: 'Credenciais inválidas.' });
+    const token = jwt.sign({ email, role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ token });
+});
+
+// Middleware de autenticação
+function requireAuth(req, res, next) {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Não autorizado.' });
+    try {
+        jwt.verify(auth.split(' ')[1], JWT_SECRET);
+        next();
+    } catch {
+        res.status(401).json({ error: 'Token inválido ou expirado.' });
+    }
+}
 
 // Rota de Health Check
 app.get('/api/health', (req, res) => {
