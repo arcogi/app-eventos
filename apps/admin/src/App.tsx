@@ -612,7 +612,7 @@ export default function App() {
   const handleSendWhatsApp = useCallback(async (g: Guest) => {
     const apelido = g.apelido || g.nome;
     const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
-    const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para ti${textDep}.\n\n🎬 Assiste até ao fim e confirma a tua presença:\n👉 https://familia-rein.cloud/c/${g.id}`;
+    const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${g.id}`;
 
     // Automação via API Evolution Substituindo o Popup:
     try {
