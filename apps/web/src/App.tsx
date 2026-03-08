@@ -66,7 +66,7 @@ export default function App() {
 
   // Verificação de telemóvel — funciona com ou sem guest_id
   const handleVerify = async () => {
-    if (!teleInput.trim()) { setTeleErro('Insere o teu telemóvel com DDD.'); return; }
+    if (!teleInput.trim()) { setTeleErro('Digite seu celular com DDD.'); return; }
     setTeleCarregando(true);
     setTeleErro('');
     try {
@@ -80,7 +80,7 @@ export default function App() {
         if (res.ok) {
           setVerificado(true);
         } else {
-          setTeleErro('❌ Número não coincide com o convite. Tenta novamente.');
+          setTeleErro('❌ Número não confere com o convite. Tente novamente.');
         }
       } else {
         // SEM guest_id: procura pelo telemóvel (lookup)
@@ -100,11 +100,11 @@ export default function App() {
             setStatusRSVP('sucesso');
           }
         } else {
-          setTeleErro('❌ Nenhum convite encontrado com este número. Verifica o DDD.');
+          setTeleErro('❌ Nenhum convite encontrado com esse número. Verifique o DDD.');
         }
       }
     } catch (e) {
-      setTeleErro('Erro de ligação. Verifica a internet.');
+      setTeleErro('Erro de conexão. Verifique sua internet.');
     } finally {
       setTeleCarregando(false);
     }
@@ -112,7 +112,7 @@ export default function App() {
 
   // Lookup de convite por telemóvel (para WhatsApp Web / browser desktop)
   const handleLookup = async () => {
-    if (!lookupInput.trim()) { setLookupErro('Insere o teu número com DDD.'); return; }
+    if (!lookupInput.trim()) { setLookupErro('Digite seu número com DDD.'); return; }
     setLookupLoading(true);
     setLookupErro('');
     try {
@@ -134,10 +134,10 @@ export default function App() {
         }
       } else {
         const d = await res.json();
-        setLookupErro(d.error || 'Número não encontrado. Verifica o DDD e tenta novamente.');
+        setLookupErro(d.error || 'Número não encontrado. Verifique o DDD e tente novamente.');
       }
     } catch (e) {
-      setLookupErro('Erro de ligação. Verifica a internet.');
+      setLookupErro('Erro de conexão. Verifique sua internet.');
     } finally {
       setLookupLoading(false);
     }
@@ -145,7 +145,7 @@ export default function App() {
 
   const handleRSVP = async (status: 'Confirmado' | 'Duvida' | 'Recusado') => {
     if (!guestId) {
-      alert('Atenção: Modo visualização ativo. Utilize o link do WhatsApp para confirmar presença.');
+      alert('Atenção: modo visualização ativo. Use o link do WhatsApp para confirmar sua presença.');
       return;
     }
     setStatusRSVP('enviando');
@@ -164,7 +164,7 @@ export default function App() {
         setStatusRSVP('sucesso');
       } else {
         setStatusRSVP('erro');
-        alert('Erro: Não foi possível localizar o seu registro de convidado.');
+        alert('Erro: não foi possível localizar seu registro de convidado.');
       }
     } catch (error) {
       setStatusRSVP('erro');
@@ -181,7 +181,7 @@ export default function App() {
   if (!config) return (
     <div className="bg-slate-900 min-h-screen flex items-center justify-center">
       <div className="text-white/20 uppercase tracking-[0.5em] text-[10px] animate-pulse font-black">
-        A carregar...
+        Carregando...
       </div>
     </div>
   );
@@ -211,7 +211,7 @@ export default function App() {
               <p className="text-white/80 text-2xl font-light tracking-wider">{config.honorees}</p>
             )}
             <p className="text-slate-400 tracking-[0.3em] text-[10px] uppercase font-bold">
-              {config.slogan || config.subtitle || 'Um momento especial aproxima-se'}
+              {config.slogan || config.subtitle || 'Um momento especial se aproxima'}
             </p>
             {config.confirmation_deadline && (
               <div className="inline-flex items-center gap-2 bg-rose-500/20 border border-rose-500/40 rounded-full px-4 py-1.5 mt-2">
@@ -235,11 +235,11 @@ export default function App() {
 
           <div className="text-center space-y-2">
             <p className="text-slate-400 text-[10px] uppercase tracking-widest font-black animate-bounce opacity-70">
-              Toca para assistir
+              Toque para assistir
             </p>
             {hasVideo && (
               <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.2em] font-black">
-                🎬 Assiste até ao final para confirmar a tua presença
+                🎬 Assista até o final para confirmar sua presença
               </p>
             )}
           </div>
@@ -257,7 +257,7 @@ export default function App() {
             </div>
             <h2 className="text-xl font-bold text-white">Verificação de Identidade</h2>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Para aceder ao teu convite exclusivo, confirma o telemóvel com que foste convidado.
+              Para acessar seu convite exclusivo, confirme o celular com o qual foi convidado.
             </p>
           </div>
 
@@ -284,7 +284,7 @@ export default function App() {
               disabled={teleCarregando}
               className="w-full py-4 rounded-2xl bg-white text-slate-900 font-black uppercase text-xs tracking-widest hover:bg-white/90 transition-all active:scale-95 disabled:opacity-50"
             >
-              {teleCarregando ? 'A verificar...' : 'Confirmar e Assistir'}
+              {teleCarregando ? 'Verificando...' : 'Confirmar e Assistir'}
             </button>
           </div>
         </div>
@@ -341,7 +341,7 @@ export default function App() {
                   <p className="text-slate-600 text-sm italic">"{config.slogan}"</p>
                 )}
                 <p className="text-slate-500 text-sm leading-relaxed px-2 font-medium">
-                  Estamos a preparar algo inesquecível e a tua presença é o que torna tudo real.
+                  Estamos preparando algo inesquecível e sua presença é o que torna tudo real.
                 </p>
                 {config.confirmation_deadline && (
                   <div className="inline-flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-full px-4 py-1.5 mt-1">
@@ -361,12 +361,12 @@ export default function App() {
                       {respostaDada === 'Confirmado' ? <CheckCircle size={40} /> : respostaDada === 'Duvida' ? <HelpCircle size={40} /> : <XCircle size={40} />}
                     </div>
                     <h3 className={`font-black uppercase text-lg tracking-widest mb-3 ${respostaDada === 'Confirmado' ? 'text-emerald-700' : respostaDada === 'Duvida' ? 'text-amber-700' : 'text-rose-600'}`}>
-                      {respostaDada === 'Confirmado' ? 'Presença Confirmada!' : respostaDada === 'Duvida' ? 'Anotado!' : 'Resposta Registada'}
+                      {respostaDada === 'Confirmado' ? 'Presença Confirmada!' : respostaDada === 'Duvida' ? 'Anotado!' : 'Resposta Registrada'}
                     </h3>
                     <p className="text-slate-600 text-sm leading-relaxed font-medium">
-                      {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela tua confirmação! Contamos contigo.') :
+                      {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela confirmação! Contamos com você.') :
                         respostaDada === 'Duvida' ? (config.msg_success_doubt || 'Esperamos que consiga vir!') :
-                          (config.msg_success_decline || 'Que pena, vais fazer falta!')}
+                          (config.msg_success_decline || 'Que pena, você vai fazer muita falta!')}
                     </p>
                     {config.event_date && (
                       <div className="mt-4 bg-white/60 rounded-2xl px-4 py-3 border border-slate-100">
@@ -384,7 +384,7 @@ export default function App() {
                     </button>
                   )}
                   <p className="text-[9px] text-slate-400 uppercase tracking-widest font-black mt-3">
-                    Podes fechar esta página
+                    Pode fechar esta página
                   </p>
                 </div>
               ) : (
@@ -394,7 +394,7 @@ export default function App() {
                     lookupMode ? (
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in duration-300">
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2">
-                          <Phone size={13} /> Identifica-te pelo telemóvel
+                          <Phone size={13} /> Identifique-se pelo celular
                         </p>
                         <input
                           type="tel"
@@ -409,7 +409,7 @@ export default function App() {
                         <div className="flex gap-2">
                           <button onClick={handleLookup} disabled={lookupLoading}
                             className="flex-1 py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all disabled:opacity-50">
-                            {lookupLoading ? 'A procurar...' : 'Encontrar Convite'}
+                            {lookupLoading ? 'Buscando...' : 'Encontrar Convite'}
                           </button>
                           <button onClick={() => setLookupMode(false)}
                             className="px-4 py-3 rounded-xl border border-slate-200 text-slate-400 font-bold text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all">
@@ -420,7 +420,7 @@ export default function App() {
                     ) : (
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
                         <p className="text-[10px] text-slate-500 font-black uppercase tracking-wider">
-                          📱 Recebeste o convite pelo WhatsApp?
+                          📱 Recebeu o convite pelo WhatsApp?
                         </p>
                         <button onClick={() => setLookupMode(true)}
                           className="w-full py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all active:scale-95">
@@ -447,7 +447,7 @@ export default function App() {
                               onChange={(e) => setDraftNome(e.target.value)}
                               className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-[1rem] px-5 py-4 font-black focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all text-sm shadow-inner text-center"
                             />
-                            <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 text-center">Nome do Convite</span>
+                            <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 text-center">Nome no Convite</span>
                           </div>
                         </div>
                       )}
