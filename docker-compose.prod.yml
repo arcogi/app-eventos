@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   arcogi-net:
     driver: bridge
@@ -11,21 +9,6 @@ volumes:
   uploads:
 
 services:
-  nginx-proxy:
-    build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: nginx-proxy
-    restart: always
-    ports:
-      - "80:80"
-      # - "443:443" # Descomentar após ativar Certbot SSL
-    networks:
-      - arcogi-net
-    depends_on:
-      - app-node
-      - evolution-api
-
   eventos-db:
     image: postgres:15
     container_name: eventos-db
@@ -72,6 +55,8 @@ services:
       dockerfile: Dockerfile
     container_name: app-node
     restart: always
+    ports:
+      - "80:3001"
     environment:
       - PORT=3001
       - DB_USER=${POSTGRES_USER:-admin}
