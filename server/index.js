@@ -67,7 +67,7 @@ function requireAuth(req, res, next) {
     try {
         jwt.verify(auth.split(' ')[1], JWT_SECRET);
         next();
-    } catch {
+    } catch (e) {
         res.status(401).json({ error: 'Token inválido ou expirado.' });
     }
 }
