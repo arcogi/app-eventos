@@ -635,8 +635,28 @@ app.post('/api/whatsapp/send', async (req, res) => {
 });
 
 // --- Rota curta para WhatsApp (ex: /c/uuid → /?guest_id=uuid) ---
-app.get('/c/:id', (req, res) => {
-    res.redirect(301, `/?guest_id=${req.params.id}`);
+// Serve HTML com OG meta tags para preview no WhatsApp + redirect JS
+app.get('/c/:id', async (req, res) => {
+    let title = 'Save the Date';
+    let description = 'Você foi convidado! Confirme sua presença.';
+    try {
+        const cfgResult = await pool.query('SELECT event_name, honorees, slogan FROM event_configs LIMIT 1');
+        if (cfgResult.rows.length > 0) {
+            const cfg = cfgResult.rows[0];
+            title = cfg.event_name || title;
+            description = cfg.honorees ? `${cfg.honorees} - ${cfg.slogan || 'Confirme sua presença'}` : description;
+        }
+    } catch { }
+    const targetUrl = `/?guest_id=${req.params.id}`;
+    res.send(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:type" content="website">
+<meta http-equiv="refresh" content="0;url=${targetUrl}">
+<title>${title}</title>
+</head><body><script>window.location.replace("${targetUrl}")</script></body></html>`);
 });
 
 // --- Fallback do React Router (SPAs) DEPOIS das APIS ---
