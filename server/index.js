@@ -159,6 +159,20 @@ async function initDB() {
             await client.query('UPDATE guests SET short_code=$1 WHERE id=$2', [code, row.id]);
         }
 
+        // Tabela de backup para rollback de resets
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS guests_backup (
+            backup_id SERIAL PRIMARY KEY,
+            backup_date TIMESTAMP DEFAULT NOW(),
+            backup_type TEXT,
+            guest_id UUID,
+            status TEXT,
+            status_envio TEXT,
+            data_envio TIMESTAMP,
+            data_resposta TIMESTAMP
+          );
+        `);
+
         // Inserir linha padrão de config se estiver vazia
         const res = await client.query('SELECT COUNT(*) FROM event_configs');
         if (parseInt(res.rows[0].count) === 0) {
@@ -260,6 +274,9 @@ app.post('/api/guests/lookup', async (req, res) => {
 // --- Reset de Envios com Erro (só os com Erro voltam a Pendente) ---
 app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
     try {
+        // Snapshot antes do reset
+        await pool.query(`INSERT INTO guests_backup (backup_type, guest_id, status, status_envio, data_envio, data_resposta)
+            SELECT 'reset-envios', id, status, status_envio, data_envio, data_resposta FROM guests WHERE status_envio='Erro'`);
         const result = await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL WHERE status_envio='Erro'`);
         res.json({ success: true, message: `${result.rowCount} envio(s) com erro resetado(s).` });
     } catch (err) {
@@ -270,8 +287,37 @@ app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
 // --- Reset de Respostas (limpa tudo: status RSVP + datas + envio) ---
 app.post('/api/guests/reset-respostas', requireAuth, async (req, res) => {
     try {
+        // Snapshot antes do reset
+        await pool.query(`INSERT INTO guests_backup (backup_type, guest_id, status, status_envio, data_envio, data_resposta)
+            SELECT 'reset-respostas', id, status, status_envio, data_envio, data_resposta FROM guests`);
         await pool.query(`UPDATE guests SET status='Pendente', data_resposta=NULL, status_envio='Pendente', data_envio=NULL`);
-        res.json({ success: true, message: 'Respostas e envios resetados.' });
+        res.json({ success: true, message: 'Respostas e envios resetados. Backup criado.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Rollback: desfazer último reset ---
+app.post('/api/guests/rollback', requireAuth, async (req, res) => {
+    try {
+        // Encontrar o último backup
+        const lastBackup = await pool.query(`SELECT DISTINCT backup_date, backup_type FROM guests_backup ORDER BY backup_date DESC LIMIT 1`);
+        if (lastBackup.rows.length === 0) return res.status(404).json({ error: 'Nenhum backup disponível para rollback.' });
+
+        const { backup_date, backup_type } = lastBackup.rows[0];
+        const backupRows = await pool.query(`SELECT * FROM guests_backup WHERE backup_date = $1`, [backup_date]);
+
+        let restored = 0;
+        for (const row of backupRows.rows) {
+            await pool.query(`UPDATE guests SET status=$1, status_envio=$2, data_envio=$3, data_resposta=$4 WHERE id=$5`,
+                [row.status, row.status_envio, row.data_envio, row.data_resposta, row.guest_id]);
+            restored++;
+        }
+
+        // Remover o backup usado
+        await pool.query(`DELETE FROM guests_backup WHERE backup_date = $1`, [backup_date]);
+
+        res.json({ success: true, message: `Rollback concluído! ${restored} convidado(s) restaurado(s) do backup ${backup_type}.` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

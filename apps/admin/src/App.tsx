@@ -898,6 +898,18 @@ export default function App() {
           >
             🗑️ Reset Respostas
           </button>
+          <button
+            onClick={async () => {
+              if (!confirm('⏪ Desfazer o último reset?\nIsso restaura o estado anterior dos convidados.')) return;
+              const res = await fetch(`${API}/api/guests/rollback`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              const data = await res.json();
+              if (res.ok) { alert(`✅ ${data.message}`); fetchData(); }
+              else alert(`❌ ${data.error || 'Erro no rollback.'}`);
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-900/30 hover:bg-emerald-800/50 text-emerald-400 hover:text-emerald-300 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border border-emerald-800/30"
+          >
+            ⏪ Desfazer Reset
+          </button>
         </div>
       </aside>
 
