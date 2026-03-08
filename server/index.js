@@ -27,9 +27,15 @@ const pool = new Pool({
 });
 
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3003', 'http://localhost:3004']
+    origin: [
+        'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175',
+        'http://localhost:3001', 'http://localhost:3003', 'http://localhost:3004',
+        'http://familia-rein.cloud', 'https://familia-rein.cloud',
+        'http://www.familia-rein.cloud', 'https://www.familia-rein.cloud',
+        'http://187.124.82.41:3001'
+    ]
 }));
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
 
 // Garantir diretório de uploads
 const uploadDir = path.join(__dirname, 'uploads', 'videos');
@@ -83,7 +89,7 @@ const storage = multer.diskStorage({
         cb(null, 'vps_' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage });
+const upload = multer({ storage: storage, limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB max
 
 // Inicialização do Banco de Dados
 async function initDB() {
