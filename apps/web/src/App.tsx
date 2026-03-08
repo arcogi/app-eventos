@@ -174,7 +174,9 @@ export default function App() {
   // Formata data de prazo em formato legível
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
+    // Parse YYYY-MM-DD manually to avoid UTC timezone shift (-1 day in Brazil)
+    const parts = dateStr.split('T')[0].split('-');
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   };
 
@@ -306,7 +308,11 @@ export default function App() {
             ref={videoRef}
             className="w-full h-full object-contain"
             controls
+            controlsList="nodownload noplaybackrate"
+            disablePictureInPicture
+            playsInline
             autoPlay
+            onContextMenu={(e) => e.preventDefault()}
             onEnded={() => setVideoEnded(true)}
             onError={() => setVideoEnded(true)}
             src={`${API}/uploads/videos/${config.video_file}`}
