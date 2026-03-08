@@ -887,10 +887,10 @@ export default function App() {
         {/* DASHBOARD TAB (Analytics & Failures only) */}
         {aba === 'dashboard' && (
           <div className="space-y-10 animate-in fade-in">
-            <div>
+            <div className="flex items-center justify-between"><div>
               <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Dashboard & Resiliência</h2>
               <div className="h-1 w-16 bg-rose-500 mt-3 rounded-full" />
-            </div>
+            </div><button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all" title="Atualizar dados"><RefreshCw size={14} /> Atualizar</button></div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
               <Stat label="Total Lista" value={totalListaCount} color="text-slate-800" />
