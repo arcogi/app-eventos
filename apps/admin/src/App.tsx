@@ -235,6 +235,21 @@ function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest
         )}
       </td>
 
+      {/* Dias para resposta */}
+      <td className="px-3 py-5 font-bold hidden lg:table-cell text-center">
+        {guest.data_envio && guest.data_resposta ? (
+          (() => {
+            const h = (new Date(guest.data_resposta).getTime() - new Date(guest.data_envio).getTime()) / (1000 * 60 * 60);
+            if (h < 1) return <span className="text-emerald-600 text-[10px] font-black">{Math.round(h * 60)}min</span>;
+            if (h < 24) return <span className="text-blue-600 text-[10px] font-black">{h.toFixed(1)}h</span>;
+            const d = Math.floor(h / 24); const hr = Math.round(h % 24);
+            return <span className={`text-[10px] font-black ${d > 3 ? 'text-rose-500' : d > 1 ? 'text-amber-600' : 'text-emerald-600'}`}>{d}d {hr}h</span>;
+          })()
+        ) : (
+          <span className="text-slate-300 text-[10px]">—</span>
+        )}
+      </td>
+
       <td className="px-6 py-5 text-right w-32">
         {!editing && (
           <div className="flex items-center justify-end gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
@@ -523,7 +538,9 @@ export default function App() {
     const media = totalHoras / guestsComDatas.length;
     if (media < 1) return `${Math.round(media * 60)}min`;
     if (media < 24) return `${media.toFixed(1)}h`;
-    return `${(media / 24).toFixed(1)}d`;
+    const dias = Math.floor(media / 24);
+    const horas = Math.round(media % 24);
+    return `${dias}d ${horas}h`;
   }, [guests]);
 
   const handleSaveConfig = async (e: React.FormEvent) => {
