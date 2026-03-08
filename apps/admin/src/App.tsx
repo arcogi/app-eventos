@@ -348,8 +348,8 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; tipo: 'sucesso' | 'erro' } | null>(null);
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('Todos');
-  const [filtroEnvio, setFiltroEnvio] = useState('Todos');
+  const [filtroStatus, setFiltroStatus] = useState<string[]>([]);
+  const [filtroEnvio, setFiltroEnvio] = useState<string[]>([]);
   const [showSim, setShowSim] = useState(false);
   const [showDisparo, setShowDisparo] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -467,8 +467,8 @@ export default function App() {
       const matchBusca = g.nome.toLowerCase().includes(busca.toLowerCase()) ||
         (g.apelido || '').toLowerCase().includes(busca.toLowerCase()) ||
         g.celular.includes(busca);
-      const matchStatus = filtroStatus === 'Todos' || g.status === filtroStatus;
-      const matchEnvio = filtroEnvio === 'Todos' || g.status_envio === filtroEnvio;
+      const matchStatus = filtroStatus.length === 0 || filtroStatus.includes(g.status);
+      const matchEnvio = filtroEnvio.length === 0 || filtroEnvio.includes(g.status_envio || 'Pendente');
       return matchBusca && matchStatus && matchEnvio;
     }),
     [guests, busca, filtroStatus, filtroEnvio]
@@ -926,43 +926,61 @@ export default function App() {
             </div>
 
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between items-center gap-3">
-                <div className="relative flex-1 min-w-[180px] max-w-xs">
-                  <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input type="text" placeholder="Procurar nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-200" />
+              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 space-y-2">
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <div className="relative flex-1 min-w-[180px] max-w-xs">
+                    <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input type="text" placeholder="Procurar nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                  </div>
+                  <button onClick={fetchData} className="text-slate-400 hover:text-slate-800 transition-colors p-2"><RefreshCw size={14} /></button>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <select
-                    value={filtroStatus}
-                    onChange={e => setFiltroStatus(e.target.value)}
-                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-black uppercase tracking-widest text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-200 cursor-pointer"
-                  >
-                    <option value="Todos">Todos RSVP</option>
-                    <option value="Pendente">⏳ Pendente</option>
-                    <option value="Confirmado">✅ Confirmado</option>
-                    <option value="Duvida">🤔 Dúvida</option>
-                    <option value="Recusado">❌ Recusado</option>
-                  </select>
-                  <select
-                    value={filtroEnvio}
-                    onChange={e => setFiltroEnvio(e.target.value)}
-                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-black uppercase tracking-widest text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-200 cursor-pointer"
-                  >
-                    <option value="Todos">Todos Envios</option>
-                    <option value="Pendente">📤 Não enviado</option>
-                    <option value="Enviado">✉️ Enviado</option>
-                    <option value="Erro">🔴 Com erro</option>
-                  </select>
-                  {(filtroStatus !== 'Todos' || filtroEnvio !== 'Todos') && (
-                    <button
-                      onClick={() => { setFiltroStatus('Todos'); setFiltroEnvio('Todos'); }}
-                      className="px-3 py-2 bg-rose-50 border border-rose-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-100 transition-all"
-                    >
-                      ✕ Limpar
-                    </button>
+                {/* Chips de filtro RSVP */}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">RSVP:</span>
+                  {([['Pendente', '⏳', 'amber'], ['Confirmado', '✅', 'emerald'], ['Duvida', '🤔', 'blue'], ['Recusado', '❌', 'rose']] as const).map(([val, emoji, color]) => {
+                    const active = filtroStatus.includes(val);
+                    const toggle = () => setFiltroStatus(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                    return (
+                      <button key={val} onClick={toggle}
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                            ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                              color === 'amber' ? 'bg-amber-400 border-amber-400 text-white' :
+                                color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' :
+                                  'bg-rose-500 border-rose-500 text-white'
+                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}
+                      >
+                        {emoji} {val === 'Duvida' ? 'Dúvida' : val}
+                      </button>
+                    );
+                  })}
+                  {filtroStatus.length > 0 && (
+                    <button onClick={() => setFiltroStatus([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
                   )}
                 </div>
-                <button onClick={fetchData} className="text-slate-400 hover:text-slate-800 transition-colors p-2"><RefreshCw size={14} /></button>
+                {/* Chips de filtro Envio */}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">ENVIO:</span>
+                  {([['Pendente', '📤', 'slate'], ['Enviado', '✉️', 'emerald'], ['Erro', '🔴', 'rose']] as const).map(([val, emoji, color]) => {
+                    const active = filtroEnvio.includes(val);
+                    const toggle = () => setFiltroEnvio(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                    return (
+                      <button key={val} onClick={toggle}
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                            ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                              color === 'rose' ? 'bg-rose-500 border-rose-500 text-white' :
+                                'bg-slate-700 border-slate-700 text-white'
+                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}
+                      >
+                        {emoji} {val === 'Pendente' ? 'Não enviado' : val}
+                      </button>
+                    );
+                  })}
+                  {filtroEnvio.length > 0 && (
+                    <button onClick={() => setFiltroEnvio([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                  )}
+                </div>
               </div>
               <div className="max-h-[500px] overflow-y-auto">
                 <table className="w-full text-left">
