@@ -56,7 +56,7 @@ services:
     container_name: app-node
     restart: always
     ports:
-      - "80:3001"
+      - "3001:3001"
     environment:
       - PORT=3001
       - DB_USER=${POSTGRES_USER:-admin}
