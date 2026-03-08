@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Heart, Calendar, CheckCircle, HelpCircle, XCircle } from 'lucide-react';
+import { Play, Heart, Calendar, CheckCircle, HelpCircle, XCircle, Lock, Phone } from 'lucide-react';
 
 const API = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
 export default function App() {
   const [iniciado, setIniciado] = useState(false);
+  const [verificado, setVerificado] = useState(false);      // Segurança: telemóvel confirmado
+  const [teleInput, setTeleInput] = useState('');
+  const [teleErro, setTeleErro] = useState('');
+  const [teleCarregando, setTeleCarregando] = useState(false);
+
   const [statusRSVP, setStatusRSVP] = useState<'pendente' | 'enviando' | 'sucesso' | 'erro'>('pendente');
   const [respostaDada, setRespostaDada] = useState<'Confirmado' | 'Duvida' | 'Recusado' | null>(null);
   const [config, setConfig] = useState<any>(null);
@@ -12,7 +17,6 @@ export default function App() {
   const [guestData, setGuestData] = useState<{ nome: string, celular: string, status?: string } | null>(null);
   const [draftNome, setDraftNome] = useState('');
 
-  // Controle de Visualização do Vídeo
   const [videoEnded, setVideoEnded] = useState(false);
   const [showRSVP, setShowRSVP] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -42,7 +46,6 @@ export default function App() {
           const data = await res.json();
           setGuestData(data);
           setDraftNome(data.nome || '');
-          // Se já respondeu anteriormente, mostrar mensagem direto
           if (data.status && data.status !== 'Pendente') {
             setRespostaDada(data.status);
             setStatusRSVP('sucesso');
@@ -54,6 +57,29 @@ export default function App() {
     fetchConfig();
     if (id) fetchGuestData(id);
   }, []);
+
+  // Verificação de telemóvel (só se houver guest_id — link do WhatsApp)
+  const handleVerify = async () => {
+    if (!teleInput.trim()) { setTeleErro('Insere o teu telemóvel com DDD.'); return; }
+    setTeleCarregando(true);
+    setTeleErro('');
+    try {
+      const res = await fetch(`${API}/api/guests/${guestId}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ celular: teleInput })
+      });
+      if (res.ok) {
+        setVerificado(true);
+      } else {
+        setTeleErro('❌ Número não coincide com o convite. Tenta novamente.');
+      }
+    } catch (e) {
+      setTeleErro('Erro de ligação. Verifica a internet.');
+    } finally {
+      setTeleCarregando(false);
+    }
+  };
 
   const handleRSVP = async (status: 'Confirmado' | 'Duvida' | 'Recusado') => {
     if (!guestId) {
@@ -71,7 +97,6 @@ export default function App() {
       if (response.ok) {
         setStatusRSVP('sucesso');
       } else if (response.status === 409) {
-        // Já respondeu antes
         const data = await response.json();
         setRespostaDada(data.status || status);
         setStatusRSVP('sucesso');
@@ -80,22 +105,30 @@ export default function App() {
         alert('Erro: Não foi possível localizar o seu registro de convidado.');
       }
     } catch (error) {
-      console.error('Erro ao enviar RSVP:', error);
       setStatusRSVP('erro');
     }
+  };
+
+  // Formata data de prazo em formato legível
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   };
 
   if (!config) return (
     <div className="bg-slate-900 min-h-screen flex items-center justify-center">
       <div className="text-white/20 uppercase tracking-[0.5em] text-[10px] animate-pulse font-black">
-        A carregar momento especial...
+        A carregar...
       </div>
     </div>
   );
 
-  // ─── ESTADOS ───────────────────────────────────────────
-  const showingVideo = iniciado && !!config.video_file && !videoEnded;
-  const showingRSVP = iniciado && (!config.video_file || videoEnded);
+  const hasVideo = !!config.video_file;
+  // Se não há guest_id (acesso directo), pula verificação
+  const precisaVerificar = hasVideo && guestId && !verificado;
+  const showingVideo = iniciado && hasVideo && !videoEnded && (verificado || !guestId);
+  const showingRSVP = iniciado && (!hasVideo || videoEnded);
 
   return (
     <div className="bg-slate-900 text-white flex flex-col items-center justify-center min-h-screen font-sans">
@@ -105,13 +138,27 @@ export default function App() {
       ══════════════════════════════════════ */}
       {!iniciado && (
         <div className="flex flex-col items-center justify-center min-h-screen p-8 space-y-10 animate-in fade-in duration-1000">
-          <div className="text-center space-y-4">
+          <div className="text-center space-y-3">
+            {config.event_name && (
+              <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.4em] font-black">{config.event_name}</p>
+            )}
             <h1 className="text-5xl font-extralight tracking-[0.4em] uppercase text-white/90">
               {config.title || 'SAVE THE DATE'}
             </h1>
+            {config.honorees && (
+              <p className="text-white/80 text-2xl font-light tracking-wider">{config.honorees}</p>
+            )}
             <p className="text-slate-400 tracking-[0.3em] text-[10px] uppercase font-bold">
-              {config.subtitle || 'Um momento especial aproxima-se'}
+              {config.slogan || config.subtitle || 'Um momento especial aproxima-se'}
             </p>
+            {config.confirmation_deadline && (
+              <div className="inline-flex items-center gap-2 bg-rose-500/20 border border-rose-500/40 rounded-full px-4 py-1.5 mt-2">
+                <Calendar size={12} className="text-rose-400" />
+                <span className="text-rose-300 text-[10px] font-black uppercase tracking-widest">
+                  Confirme até {formatDate(config.confirmation_deadline)}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="relative group">
@@ -128,7 +175,7 @@ export default function App() {
             <p className="text-slate-400 text-[10px] uppercase tracking-widest font-black animate-bounce opacity-70">
               Toca para assistir
             </p>
-            {config.video_file && (
+            {hasVideo && (
               <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.2em] font-black">
                 🎬 Assiste até ao final para confirmar a tua presença
               </p>
@@ -138,9 +185,51 @@ export default function App() {
       )}
 
       {/* ══════════════════════════════════════
+          ESTADO 1.5 — VERIFICAÇÃO TELEMÓVEL
+      ══════════════════════════════════════ */}
+      {iniciado && precisaVerificar && (
+        <div className="flex flex-col items-center justify-center min-h-screen p-8 animate-in fade-in duration-500 max-w-sm w-full mx-auto">
+          <div className="text-center space-y-4 mb-10">
+            <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Lock size={28} className="text-white/70" />
+            </div>
+            <h2 className="text-xl font-bold text-white">Verificação de Identidade</h2>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Para aceder ao teu convite exclusivo, confirma o telemóvel com que foste convidado.
+            </p>
+          </div>
+
+          <div className="w-full space-y-4">
+            <div className="flex items-center bg-white/10 border border-white/20 rounded-2xl px-4 py-4 gap-3 focus-within:border-white/40 transition-all">
+              <Phone size={18} className="text-slate-400 shrink-0" />
+              <input
+                type="tel"
+                placeholder="DDD + Número (ex: 11 99999-9999)"
+                value={teleInput}
+                onChange={(e) => setTeleInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleVerify()}
+                className="bg-transparent text-white placeholder-slate-500 text-sm font-medium w-full focus:outline-none"
+                autoFocus
+              />
+            </div>
+
+            {teleErro && (
+              <p className="text-rose-400 text-xs font-bold text-center animate-in fade-in">{teleErro}</p>
+            )}
+
+            <button
+              onClick={handleVerify}
+              disabled={teleCarregando}
+              className="w-full py-4 rounded-2xl bg-white text-slate-900 font-black uppercase text-xs tracking-widest hover:bg-white/90 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {teleCarregando ? 'A verificar...' : 'Confirmar e Assistir'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════
           ESTADO 02 — VÍDEO FULLSCREEN LIVRE
-          (sem card, ocupa o ecrã todo,
-           funciona em paisagem e retrato)
       ══════════════════════════════════════ */}
       {showingVideo && (
         <div className="fixed inset-0 bg-black z-50 flex items-center justify-center animate-in fade-in duration-500">
@@ -163,15 +252,11 @@ export default function App() {
         <div className="flex items-center justify-center min-h-screen p-4 w-full">
           <div className="max-w-md w-full bg-white text-slate-800 rounded-[3.5rem] overflow-hidden shadow-[0_30px_100px_rgba(0,0,0,0.5)] animate-in zoom-in-95 fade-in duration-700 flex flex-col">
 
-            {/* Decoração topo (só aparece quando não há vídeo) */}
-            {!config.video_file && (
+            {!hasVideo && (
               <div className="bg-black aspect-video relative flex items-center justify-center">
                 <div className="bg-gradient-to-t from-black/80 to-transparent absolute inset-0" />
                 <div className="z-10 text-white text-center p-6 space-y-2">
                   <Heart className="mx-auto mb-2 text-rose-500 fill-rose-500 opacity-50" size={32} />
-                  <p className="text-[10px] uppercase tracking-[0.3em] font-black opacity-80">
-                    'A nossa história continua contigo...'
-                  </p>
                 </div>
               </div>
             )}
@@ -183,30 +268,57 @@ export default function App() {
                 <Heart size={20} className="fill-slate-100" />
               </div>
 
-              <div className="space-y-3 mb-6">
-                <h2 className="text-4xl font-serif tracking-tight text-slate-900">Família Rein</h2>
+              <div className="space-y-2 mb-6">
+                {config.honorees && (
+                  <p className="text-rose-400 text-xs font-black uppercase tracking-widest">{config.honorees}</p>
+                )}
+                <h2 className="text-4xl font-serif tracking-tight text-slate-900">
+                  {config.event_name || 'Família Rein'}
+                </h2>
+                {config.slogan && (
+                  <p className="text-slate-600 text-sm italic">"{config.slogan}"</p>
+                )}
                 <p className="text-slate-500 text-sm leading-relaxed px-2 font-medium">
                   Estamos a preparar algo inesquecível e a tua presença é o que torna tudo real.
                 </p>
+                {config.confirmation_deadline && (
+                  <div className="inline-flex items-center gap-2 bg-rose-50 border border-rose-200 rounded-full px-4 py-1.5 mt-1">
+                    <Calendar size={11} className="text-rose-500" />
+                    <span className="text-rose-600 text-[10px] font-black uppercase tracking-widest">
+                      Confirme até {formatDate(config.confirmation_deadline)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {statusRSVP === 'sucesso' ? (
-                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-emerald-100 animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-sm">
-                  <div className={`w-16 h-16 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl ${respostaDada === 'Confirmado' ? 'bg-emerald-500 shadow-emerald-200' : respostaDada === 'Duvida' ? 'bg-amber-500 shadow-amber-200' : 'bg-rose-500 shadow-rose-200'}`}>
-                    {respostaDada === 'Confirmado' ? <CheckCircle size={32} /> : respostaDada === 'Duvida' ? <HelpCircle size={32} /> : <XCircle size={32} />}
+                /* ── MENSAGEM DE SUCESSO COM DESTAQUE ── */
+                <div className="animate-in zoom-in-95 fade-in duration-500">
+                  <div className={`p-8 rounded-[2rem] border ${respostaDada === 'Confirmado' ? 'bg-emerald-50 border-emerald-200' : respostaDada === 'Duvida' ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200'}`}>
+                    <div className={`w-20 h-20 text-white rounded-full flex items-center justify-center mx-auto mb-5 shadow-xl animate-bounce ${respostaDada === 'Confirmado' ? 'bg-emerald-500 shadow-emerald-200' : respostaDada === 'Duvida' ? 'bg-amber-500 shadow-amber-200' : 'bg-rose-400 shadow-rose-200'}`}>
+                      {respostaDada === 'Confirmado' ? <CheckCircle size={40} /> : respostaDada === 'Duvida' ? <HelpCircle size={40} /> : <XCircle size={40} />}
+                    </div>
+                    <h3 className={`font-black uppercase text-lg tracking-widest mb-3 ${respostaDada === 'Confirmado' ? 'text-emerald-700' : respostaDada === 'Duvida' ? 'text-amber-700' : 'text-rose-600'}`}>
+                      {respostaDada === 'Confirmado' ? 'Presença Confirmada!' : respostaDada === 'Duvida' ? 'Anotado!' : 'Resposta Registada'}
+                    </h3>
+                    <p className="text-slate-600 text-sm leading-relaxed font-medium">
+                      {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela tua confirmação! Contamos contigo.') :
+                        respostaDada === 'Duvida' ? (config.msg_success_doubt || 'Esperamos que consiga vir!') :
+                          (config.msg_success_decline || 'Que pena, vais fazer falta!')}
+                    </p>
+                    {config.event_date && (
+                      <div className="mt-4 bg-white/60 rounded-2xl px-4 py-3 border border-slate-100">
+                        <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Data do Evento</p>
+                        <p className="text-slate-700 font-black text-sm">{formatDate(config.event_date)}</p>
+                      </div>
+                    )}
                   </div>
-                  <h3 className="font-black text-slate-800 uppercase text-sm tracking-widest mb-2">Resposta Registada</h3>
-                  <p className="text-xs text-slate-600 leading-relaxed font-bold">
-                    {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela tua confirmação!') :
-                      respostaDada === 'Duvida' ? (config.msg_success_doubt || 'Anotado!') :
-                        (config.msg_success_decline || 'Que pena!')}
-                  </p>
-                  {config.video_file && (
+                  {hasVideo && (
                     <button
-                      onClick={() => { setVideoEnded(false); }}
+                      onClick={() => { setVideoEnded(false); setVerificado(false); }}
                       className="mt-4 w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 border-slate-200 text-slate-500 hover:bg-slate-100 transition-all"
                     >
-                      🎬 Assistir vídeo novamente
+                      🎬 Rever o vídeo
                     </button>
                   )}
                   <p className="text-[9px] text-slate-400 uppercase tracking-widest font-black mt-3">
@@ -233,21 +345,13 @@ export default function App() {
                     <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       {guestData && (
                         <div className="space-y-4 mb-2 pt-4 border-t border-slate-100">
-                          <div className="flex flex-col text-left group">
+                          <div className="flex flex-col">
                             <input
                               value={draftNome}
                               onChange={(e) => setDraftNome(e.target.value)}
                               className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-[1rem] px-5 py-4 font-black focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all text-sm shadow-inner text-center"
                             />
                             <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 text-center">Nome do Convite</span>
-                          </div>
-                          <div className="flex flex-col text-left">
-                            <input
-                              value={guestData.celular}
-                              disabled
-                              className="w-full bg-slate-100 border border-slate-200 text-slate-400 rounded-[1rem] px-5 py-4 font-black cursor-not-allowed opacity-60 text-sm text-center"
-                            />
-                            <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 text-center">Telemóvel (Bloqueado)</span>
                           </div>
                         </div>
                       )}

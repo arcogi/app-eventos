@@ -22,6 +22,11 @@ interface EventConfig {
   msg_success_doubt?: string;
   msg_success_decline?: string;
   footer_text?: string;
+  event_name?: string;
+  honorees?: string;
+  slogan?: string;
+  event_date?: string;
+  confirmation_deadline?: string;
 }
 
 interface Guest {
@@ -35,6 +40,7 @@ interface Guest {
   status: string;
   status_envio?: string;
   data_resposta?: string;
+  data_envio?: string;
 }
 
 // ── Simulador de iPhone ─────────────────────────────────────────────────────
@@ -785,6 +791,29 @@ export default function App() {
           >
             <Zap size={16} /> Disparar Convites
           </button>
+          <button
+            onClick={async () => {
+              if (!confirm('⚠️ Resetar status de envio para todos os convidados?\nIsso não apaga as respostas RSVP.')) return;
+              const res = await fetch(`${API}/api/guests/reset-envios`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              if (res.ok) alert('✅ Envios resetados!');
+              else alert('❌ Erro ao resetar envios.');
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+          >
+            🔄 Reset Envios
+          </button>
+          <button
+            onClick={async () => {
+              if (!confirm('⚠️ Resetar TODAS as respostas RSVP dos convidados?\nEsta ação não pode ser desfeita!')) return;
+              if (!confirm('🔴 Tens a certeza? Todos os status voltarão a "Pendente".')) return;
+              const res = await fetch(`${API}/api/guests/reset-respostas`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              if (res.ok) { alert('✅ Respostas resetadas!'); fetchData(); }
+              else alert('❌ Erro ao resetar respostas.');
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-rose-900/50 text-slate-500 hover:text-rose-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+          >
+            🗑️ Reset Respostas
+          </button>
         </div>
       </aside>
 
@@ -969,13 +998,30 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-8">
                 <Card>
-                  <h3 className="font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Settings size={16} className="text-rose-500" /> Identidade</h3>
-                  <Field label="Título">
+                  <h3 className="font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Settings size={16} className="text-rose-500" /> Identidade do Evento</h3>
+                  <Field label="Nome do Evento">
+                    <input type="text" placeholder="Ex: Aniversário Família Rein" value={config?.event_name || ''} onChange={e => setConfig(p => p ? { ...p, event_name: e.target.value } : null)} className={inputCls} />
+                  </Field>
+                  <Field label="Aniversariantes / Homenageados">
+                    <input type="text" placeholder="Ex: João & Maria" value={config?.honorees || ''} onChange={e => setConfig(p => p ? { ...p, honorees: e.target.value } : null)} className={inputCls} />
+                  </Field>
+                  <Field label="Slogan do Evento">
+                    <input type="text" placeholder="Ex: 50 anos de amor" value={config?.slogan || ''} onChange={e => setConfig(p => p ? { ...p, slogan: e.target.value } : null)} className={inputCls} />
+                  </Field>
+                  <Field label="Título (Save the Date)">
                     <input type="text" value={config?.title || ''} onChange={e => setConfig(p => p ? { ...p, title: e.target.value } : null)} className={inputCls} />
                   </Field>
-                  <Field label="Slogan">
+                  <Field label="Subtítulo">
                     <input type="text" value={config?.subtitle || ''} onChange={e => setConfig(p => p ? { ...p, subtitle: e.target.value } : null)} className={inputCls} />
                   </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="📅 Data do Evento">
+                      <input type="date" value={config?.event_date?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, event_date: e.target.value } : null)} className={inputCls} />
+                    </Field>
+                    <Field label="⏰ Prazo de Confirmação">
+                      <input type="date" value={config?.confirmation_deadline?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, confirmation_deadline: e.target.value } : null)} className={inputCls} />
+                    </Field>
+                  </div>
                 </Card>
 
                 <Card>

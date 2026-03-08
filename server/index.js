@@ -139,6 +139,14 @@ async function initDB() {
         // Migração: adicionar coluna status_envio em guests e apelido
         await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS apelido TEXT;`);
         await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS status_envio TEXT DEFAULT 'Pendente';`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS data_envio TIMESTAMP;`);
+
+        // Campos de identidade do evento
+        await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS event_name TEXT;`);
+        await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS honorees TEXT;`);
+        await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS slogan TEXT;`);
+        await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS event_date DATE;`);
+        await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS confirmation_deadline DATE;`);
 
         // Inserir linha padrão de config se estiver vazia
         const res = await client.query('SELECT COUNT(*) FROM event_configs');
@@ -180,16 +188,60 @@ app.get('/api/config', async (req, res) => {
 });
 
 app.post('/api/config', async (req, res) => {
-    const { title, subtitle, video_file, btn_confirm_text, btn_doubt_text, btn_decline_text, msg_success_confirm, msg_success_doubt, msg_success_decline, footer_text } = req.body;
+    const { title, subtitle, video_file, btn_confirm_text, btn_doubt_text, btn_decline_text,
+        msg_success_confirm, msg_success_doubt, msg_success_decline, footer_text,
+        event_name, honorees, slogan, event_date, confirmation_deadline } = req.body;
     try {
         await pool.query(`
       UPDATE event_configs SET 
         title=$1, subtitle=$2, video_file=$3, btn_confirm_text=$4, 
         btn_doubt_text=$5, btn_decline_text=$6, msg_success_confirm=$7, msg_success_doubt=$8,
-        msg_success_decline=$9, footer_text=$10
+        msg_success_decline=$9, footer_text=$10,
+        event_name=$11, honorees=$12, slogan=$13, event_date=$14, confirmation_deadline=$15
       WHERE id=(SELECT id FROM event_configs LIMIT 1)
-    `, [title, subtitle, video_file, btn_confirm_text, btn_doubt_text, btn_decline_text, msg_success_confirm, msg_success_doubt, msg_success_decline, footer_text]);
+    `, [title, subtitle, video_file, btn_confirm_text, btn_doubt_text, btn_decline_text,
+            msg_success_confirm, msg_success_doubt, msg_success_decline, footer_text,
+            event_name, honorees, slogan, event_date || null, confirmation_deadline || null]);
         res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Verificação de telemóvel (segurança do vídeo) ---
+app.post('/api/guests/:id/verify', async (req, res) => {
+    const { id } = req.params;
+    const { celular } = req.body;
+    if (!celular) return res.status(400).json({ error: 'Telemóvel obrigatório.' });
+    try {
+        const result = await pool.query('SELECT id, celular FROM guests WHERE id = $1', [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Convidado não encontrado.' });
+        const clean = (s) => String(s).replace(/\D/g, '');
+        const stored = clean(result.rows[0].celular);
+        const input = clean(celular);
+        const match = stored === input || stored === `55${input}` || `55${stored}` === input || stored.slice(-8) === input.slice(-8);
+        if (!match) return res.status(401).json({ error: 'Número não coincide com o convite.' });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Reset de Envios ---
+app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
+    try {
+        await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL`);
+        res.json({ success: true, message: 'Envios resetados.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Reset de Respostas ---
+app.post('/api/guests/reset-respostas', requireAuth, async (req, res) => {
+    try {
+        await pool.query(`UPDATE guests SET status='Pendente', data_resposta=NULL`);
+        res.json({ success: true, message: 'Respostas resetadas.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -547,7 +599,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
         }
 
         // Atualizar banco de dados
-        await pool.query(`UPDATE guests SET status_envio = 'Enviado' WHERE id = $1`, [guestId]);
+        await pool.query(`UPDATE guests SET status_envio = 'Enviado', data_envio = NOW() WHERE id = $1`, [guestId]);
         res.json({ success: true, message: 'Disparo via Evolution API efetuado com sucesso!' });
     } catch (err) {
         await pool.query(`UPDATE guests SET status_envio = 'Erro' WHERE id = $1`, [guestId]);
