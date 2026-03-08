@@ -118,6 +118,15 @@ export default function App() {
         /* ESTADO 02: O CONVITE DINÂMICO */
         <div className="max-w-md w-full bg-white text-slate-800 rounded-[3.5rem] overflow-hidden shadow-[0_30px_100px_rgba(0,0,0,0.5)] animate-in zoom-in duration-700 flex flex-col">
 
+          {/* BANNER ACIMA DO VÍDEO */}
+          {config.video_file && !videoEnded && (
+            <div className="bg-slate-900 px-6 py-3 text-center">
+              <p className="text-white/70 text-[10px] uppercase tracking-[0.35em] font-black animate-pulse">
+                🎬 Assista até o final para desbloquear o convite
+              </p>
+            </div>
+          )}
+
           {/* PLAYER DE VÍDEO NATIVO COBRINDO O TOPO ADEQUADAMENTE */}
           <div className={`bg-black relative flex flex-col items-center justify-center overflow-hidden transition-all duration-700 ease-in-out shrink-0 ${config.video_file && !videoEnded ? 'h-[50vh] md:h-[400px]' : 'aspect-video'}`}>
             {config.video_file ? (
