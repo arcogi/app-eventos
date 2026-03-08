@@ -41,6 +41,7 @@ interface Guest {
   status_envio?: string;
   data_resposta?: string;
   data_envio?: string;
+  short_code?: string;
 }
 
 // ── Simulador de iPhone ─────────────────────────────────────────────────────
@@ -612,7 +613,8 @@ export default function App() {
   const handleSendWhatsApp = useCallback(async (g: Guest) => {
     const apelido = g.apelido || g.nome;
     const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
-    const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${g.id}`;
+    const linkCode = g.short_code || g.id;
+    const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}`;
 
     // Automação via API Evolution Substituindo o Popup:
     try {

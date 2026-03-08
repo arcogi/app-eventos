@@ -148,6 +148,17 @@ async function initDB() {
         await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS event_date DATE;`);
         await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS confirmation_deadline DATE;`);
 
+        // Short code para URLs amigáveis
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS short_code TEXT;`);
+        await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_guests_short_code ON guests(short_code);`);
+        // Gerar short_code para guests existentes que não tenham
+        const noCode = await client.query(`SELECT id FROM guests WHERE short_code IS NULL`);
+        for (const row of noCode.rows) {
+            let code;
+            do { code = generateShortCode(); } while ((await client.query('SELECT 1 FROM guests WHERE short_code=$1', [code])).rowCount > 0);
+            await client.query('UPDATE guests SET short_code=$1 WHERE id=$2', [code, row.id]);
+        }
+
         // Inserir linha padrão de config se estiver vazia
         const res = await client.query('SELECT COUNT(*) FROM event_configs');
         if (parseInt(res.rows[0].count) === 0) {
@@ -295,6 +306,14 @@ app.get('/api/guests', async (req, res) => {
     }
 });
 
+// Gerar código curto alfanumérico de 6 caracteres
+function generateShortCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem I,O,0,1 para evitar confusão
+    let code = '';
+    for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+    return code;
+}
+
 function formatPhone(phone) {
     if (!phone) return '';
     let cleaned = String(phone).replace(/\D/g, '');
@@ -308,11 +327,15 @@ app.post('/api/guests', async (req, res) => {
     const { nome, apelido, celular, idade, sexo, dependentes, tipo_evento } = req.body;
     const celularFormatado = formatPhone(celular);
     try {
+        // Gerar short_code único
+        let short_code;
+        do { short_code = generateShortCode(); } while ((await pool.query('SELECT 1 FROM guests WHERE short_code=$1', [short_code])).rowCount > 0);
+
         const result = await pool.query(`
-      INSERT INTO guests (nome, apelido, celular, idade, sexo, dependentes, tipo_evento)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO guests (nome, apelido, celular, idade, sexo, dependentes, tipo_evento, short_code)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
-    `, [nome, apelido || nome, celularFormatado, idade, sexo, dependentes || 0, tipo_evento || 'Save the Date']);
+    `, [nome, apelido || nome, celularFormatado, idade, sexo, dependentes || 0, tipo_evento || 'Save the Date', short_code]);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         if (err.code === '23505') {
@@ -347,8 +370,8 @@ app.post('/api/guests/bulk', async (req, res) => {
                 const sexoValido = ['Masculino', 'Feminino'].includes(guest.sexo) ? guest.sexo : 'Masculino';
 
                 const queryRes = await client.query(`
-                    INSERT INTO guests (nome, apelido, celular, dependentes, idade, sexo, status, tipo_evento)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    INSERT INTO guests (nome, apelido, celular, dependentes, idade, sexo, status, tipo_evento, short_code)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                     ON CONFLICT (celular) DO UPDATE 
                     SET 
                       dependentes = EXCLUDED.dependentes,
@@ -356,7 +379,7 @@ app.post('/api/guests/bulk', async (req, res) => {
                       nome = EXCLUDED.nome,
                       idade = EXCLUDED.idade,
                       sexo = EXCLUDED.sexo
-                    RETURNING id
+                    RETURNING id, short_code
                 `, [
                     guest.nome,
                     guest.apelido || guest.nome,
@@ -365,7 +388,8 @@ app.post('/api/guests/bulk', async (req, res) => {
                     idadeValida,
                     sexoValido,
                     'Pendente',
-                    'Save the Date'
+                    'Save the Date',
+                    generateShortCode()
                 ]);
 
                 // Se RETURNING id retornou algo, a linha foi criada de facto
@@ -634,9 +658,20 @@ app.post('/api/whatsapp/send', async (req, res) => {
     }
 });
 
-// --- Rota curta para WhatsApp (ex: /c/uuid → /?guest_id=uuid) ---
-// Serve HTML com OG meta tags para preview no WhatsApp + redirect JS
-app.get('/c/:id', async (req, res) => {
+// --- Rota curta para WhatsApp (ex: /c/ABC123 → /?guest_id=uuid) ---
+// Aceita short_code (6 chars) ou UUID (compatibilidade retroativa)
+app.get('/c/:code', async (req, res) => {
+    const code = req.params.code;
+    let guestId = code; // fallback: usar como UUID direto
+
+    // Tentar resolver short_code → UUID
+    try {
+        const guestResult = await pool.query('SELECT id FROM guests WHERE short_code = $1', [code.toUpperCase()]);
+        if (guestResult.rows.length > 0) {
+            guestId = guestResult.rows[0].id;
+        }
+    } catch { }
+
     let title = 'Save the Date';
     let description = 'Você foi convidado! Confirme sua presença.';
     try {
@@ -647,7 +682,7 @@ app.get('/c/:id', async (req, res) => {
             description = cfg.honorees ? `${cfg.honorees} - ${cfg.slogan || 'Confirme sua presença'}` : description;
         }
     } catch { }
-    const targetUrl = `/?guest_id=${req.params.id}`;
+    const targetUrl = `/?guest_id=${guestId}`;
     res.send(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
