@@ -469,6 +469,12 @@ export default function App() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Auto-refresh a cada 15s para captar RSVPs em tempo real
+  useEffect(() => {
+    const interval = setInterval(fetchData, 15000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
   const guestsFiltrados = useMemo(
     () => guests.filter(g => {
       const matchBusca = g.nome.toLowerCase().includes(busca.toLowerCase()) ||
