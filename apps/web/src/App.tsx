@@ -201,17 +201,15 @@ export default function App() {
       {!iniciado && (
         <div className="flex flex-col items-center justify-center min-h-screen p-8 space-y-10 animate-in fade-in duration-1000">
           <div className="text-center space-y-3">
-            {config.event_name && (
-              <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.4em] font-black">{config.event_name}</p>
-            )}
+            <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.4em] font-black">SAVE THE DATE</p>
             <h1 className="text-5xl font-extralight tracking-[0.4em] uppercase text-white/90">
-              {config.title || 'SAVE THE DATE'}
+              {config.event_name || 'Família Rein'}
             </h1>
             {config.honorees && (
               <p className="text-white/80 text-2xl font-light tracking-wider">{config.honorees}</p>
             )}
             <p className="text-slate-400 tracking-[0.3em] text-[10px] uppercase font-bold">
-              {config.slogan || config.subtitle || 'Um momento especial se aproxima'}
+              {config.slogan || 'Um momento especial se aproxima'}
             </p>
             {config.confirmation_deadline && (
               <div className="inline-flex items-center gap-2 bg-rose-500/20 border border-rose-500/40 rounded-full px-4 py-1.5 mt-2">

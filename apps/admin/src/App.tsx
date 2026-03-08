@@ -215,7 +215,7 @@ function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest
         </span>
         {guest.data_resposta && (
           <div className="text-[8px] text-slate-400 font-bold mt-1 uppercase">
-            {new Date(guest.data_resposta).toLocaleDateString()}
+            {new Date(guest.data_resposta).toLocaleDateString('pt-BR')} {new Date(guest.data_resposta).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
       </td>
@@ -224,6 +224,11 @@ function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest
         <div className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${dispStatusColor}`}>
           <Send size={10} /> {guest.status_envio || 'Pendente'}
         </div>
+        {guest.data_envio && (
+          <div className="text-[8px] text-slate-400 font-bold mt-1 uppercase">
+            {new Date(guest.data_envio).toLocaleDateString('pt-BR')} {new Date(guest.data_envio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
       </td>
 
       <td className="px-6 py-5 text-right w-32">
@@ -485,6 +490,24 @@ export default function App() {
 
   const disparoPendentesCount = useMemo(() => guests.filter(g => (g.status_envio || 'Pendente') === 'Pendente').length, [guests]);
   const failedGuests = useMemo(() => guests.filter(g => g.status_envio === 'Erro'), [guests]);
+
+  // CRM Analytics
+  const enviadosCount = useMemo(() => guests.filter(g => g.status_envio === 'Enviado').length, [guests]);
+  const respostasCount = useMemo(() => guests.filter(g => g.data_resposta).length, [guests]);
+  const taxaResposta = useMemo(() => enviadosCount > 0 ? Math.round((respostasCount / enviadosCount) * 100) : 0, [enviadosCount, respostasCount]);
+  const tempoMedioResposta = useMemo(() => {
+    const guestsComDatas = guests.filter(g => g.data_envio && g.data_resposta);
+    if (guestsComDatas.length === 0) return '—';
+    const totalHoras = guestsComDatas.reduce((sum, g) => {
+      const envio = new Date(g.data_envio!).getTime();
+      const resp = new Date(g.data_resposta!).getTime();
+      return sum + (resp - envio) / (1000 * 60 * 60);
+    }, 0);
+    const media = totalHoras / guestsComDatas.length;
+    if (media < 1) return `${Math.round(media * 60)}min`;
+    if (media < 24) return `${media.toFixed(1)}h`;
+    return `${(media / 24).toFixed(1)}d`;
+  }, [guests]);
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -842,6 +865,14 @@ export default function App() {
               <Stat label="Falhas" value={failedGuests.length} color="text-rose-600" alert={failedGuests.length > 0} />
             </div>
 
+            {/* CRM Analytics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Stat label="📤 Enviados" value={enviadosCount} color="text-blue-600" />
+              <Stat label="📬 Respostas" value={respostasCount} color="text-violet-600" />
+              <Stat label="⚡ Taxa Resposta" value={`${taxaResposta}%`} color="text-emerald-600" />
+              <Stat label="⏱️ Tempo Médio" value={tempoMedioResposta} color="text-amber-600" />
+            </div>
+
             {failedGuests.length > 0 && (
               <div className="bg-rose-50 border border-rose-200 rounded-[2rem] p-8 shadow-sm">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -943,11 +974,11 @@ export default function App() {
                     return (
                       <button key={val} onClick={toggle}
                         className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                            ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                              color === 'amber' ? 'bg-amber-400 border-amber-400 text-white' :
-                                color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' :
-                                  'bg-rose-500 border-rose-500 text-white'
-                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                            color === 'amber' ? 'bg-amber-400 border-amber-400 text-white' :
+                              color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' :
+                                'bg-rose-500 border-rose-500 text-white'
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
                           }`}
                       >
                         {emoji} {val === 'Duvida' ? 'Dúvida' : val}
@@ -967,10 +998,10 @@ export default function App() {
                     return (
                       <button key={val} onClick={toggle}
                         className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                            ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                              color === 'rose' ? 'bg-rose-500 border-rose-500 text-white' :
-                                'bg-slate-700 border-slate-700 text-white'
-                            : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                            color === 'rose' ? 'bg-rose-500 border-rose-500 text-white' :
+                              'bg-slate-700 border-slate-700 text-white'
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
                           }`}
                       >
                         {emoji} {val === 'Pendente' ? 'Não enviado' : val}
@@ -1056,24 +1087,18 @@ export default function App() {
                   <Field label="Nome do Evento">
                     <input type="text" placeholder="Ex: Aniversário Família Rein" value={config?.event_name || ''} onChange={e => setConfig(p => p ? { ...p, event_name: e.target.value } : null)} className={inputCls} />
                   </Field>
-                  <Field label="Aniversariantes / Homenageados">
+                  <Field label="Aniversariante(s) / Noivos / Debutante(s) / Casal">
                     <input type="text" placeholder="Ex: João & Maria" value={config?.honorees || ''} onChange={e => setConfig(p => p ? { ...p, honorees: e.target.value } : null)} className={inputCls} />
                   </Field>
-                  <Field label="Slogan do Evento">
+                  <Field label="Slogan">
                     <input type="text" placeholder="Ex: 50 anos de amor" value={config?.slogan || ''} onChange={e => setConfig(p => p ? { ...p, slogan: e.target.value } : null)} className={inputCls} />
                   </Field>
-                  <Field label="Título (Save the Date)">
-                    <input type="text" value={config?.title || ''} onChange={e => setConfig(p => p ? { ...p, title: e.target.value } : null)} className={inputCls} />
-                  </Field>
-                  <Field label="Subtítulo">
-                    <input type="text" value={config?.subtitle || ''} onChange={e => setConfig(p => p ? { ...p, subtitle: e.target.value } : null)} className={inputCls} />
-                  </Field>
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="📅 Data do Evento">
-                      <input type="date" value={config?.event_date?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, event_date: e.target.value } : null)} className={inputCls} />
-                    </Field>
-                    <Field label="⏰ Prazo de Confirmação">
+                    <Field label="📅 Prazo de Confirmação">
                       <input type="date" value={config?.confirmation_deadline?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, confirmation_deadline: e.target.value } : null)} className={inputCls} />
+                    </Field>
+                    <Field label="🎉 Data do Evento">
+                      <input type="date" value={config?.event_date?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, event_date: e.target.value } : null)} className={inputCls} />
                     </Field>
                   </div>
                 </Card>
@@ -1132,7 +1157,7 @@ export default function App() {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-function Stat({ label, value, color, alert }: { label: string; value: number; color: string; alert?: boolean }) {
+function Stat({ label, value, color, alert }: { label: string; value: number | string; color: string; alert?: boolean }) {
   return (
     <div className={`bg-white px-6 py-8 rounded-[2rem] shadow-sm border ${alert ? 'border-rose-300 bg-rose-50 scale-105 shadow-xl shadow-rose-100' : 'border-slate-200'} flex flex-col items-start`}>
       <span className="text-[10px] uppercase font-black text-slate-500 tracking-widest mb-2">{label}</span>
