@@ -582,110 +582,100 @@ app.post('/api/guests/:id/rsvp', async (req, res) => {
     }
 });
 
-// --- ROTAS WHATSAPP EVOLUTION API (REAL) ---
+
+// --- ROTAS WHATSAPP (Cloud API oficial + Evolution API fallback) ---
+// Cloud API (Meta oficial) - sem risco de ban
+const WA_CLOUD_TOKEN = process.env.WA_CLOUD_TOKEN || '';
+const WA_CLOUD_PHONE_ID = process.env.WA_CLOUD_PHONE_ID || '';
+const WA_CLOUD_API_VERSION = process.env.WA_CLOUD_API_VERSION || 'v21.0';
+
+// Evolution API (fallback)
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'http://localhost:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'eventos_arcogi_global_123';
 const INSTANCE_NAME = 'EventosApp';
 
+// Detecta qual API usar
+const useCloudAPI = () => !!(WA_CLOUD_TOKEN && WA_CLOUD_PHONE_ID);
+
 app.get('/api/whatsapp/status', async (req, res) => {
+    if (useCloudAPI()) {
+        try {
+            const resp = await fetch(`https://graph.facebook.com/${WA_CLOUD_API_VERSION}/${WA_CLOUD_PHONE_ID}`, {
+                headers: { 'Authorization': `Bearer ${WA_CLOUD_TOKEN}` }
+            });
+            if (resp.ok) {
+                return res.json({ status: 'CONNECTED', mode: 'cloud_api', qrCode: '' });
+            }
+            return res.json({ status: 'DISCONNECTED', mode: 'cloud_api', error: 'Token inválido' });
+        } catch {
+            return res.json({ status: 'DISCONNECTED', mode: 'cloud_api' });
+        }
+    }
+
+    // Fallback: Evolution API
     try {
         const resp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${INSTANCE_NAME}`, {
             headers: { 'apikey': EVOLUTION_API_KEY }
         });
-
-        if (!resp.ok) {
-            return res.json({ status: 'DISCONNECTED', qrCode: '' });
-        }
+        if (!resp.ok) return res.json({ status: 'DISCONNECTED', qrCode: '', mode: 'evolution' });
 
         const data = await resp.json();
         const state = data?.instance?.state || 'DISCONNECTED';
 
-        let qrCodeString = '';
         if (state === 'connecting') {
-            // Ir buscar Base64 do QR Code se ele já tiver sido emitido na aba /connect
-            qrCodeString = req.app.locals.lastQrCode || '';
-            return res.json({ status: 'QR_CODE', qrCode: qrCodeString });
+            return res.json({ status: 'QR_CODE', qrCode: req.app.locals.lastQrCode || '', mode: 'evolution' });
         } else if (state === 'open') {
-            return res.json({ status: 'CONNECTED', qrCode: '' });
+            return res.json({ status: 'CONNECTED', qrCode: '', mode: 'evolution' });
         }
-
-        res.json({ status: 'DISCONNECTED', qrCode: '' });
-    } catch (e) {
-        res.json({ status: 'DISCONNECTED', qrCode: '' });
+        res.json({ status: 'DISCONNECTED', qrCode: '', mode: 'evolution' });
+    } catch {
+        res.json({ status: 'DISCONNECTED', qrCode: '', mode: 'evolution' });
     }
 });
 
 app.post('/api/whatsapp/connect', async (req, res) => {
+    if (useCloudAPI()) {
+        return res.json({ status: 'CONNECTED', mode: 'cloud_api', message: 'Cloud API conectada. Não precisa de QR Code.' });
+    }
     try {
-        // Tenta criar a instância, pedindo o qrcode
-        const resp = await fetch(`${EVOLUTION_URL}/instance/create`, {
+        await fetch(`${EVOLUTION_URL}/instance/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
-            body: JSON.stringify({
-                instanceName: INSTANCE_NAME,
-                qrcode: true,
-                integration: "WHATSAPP-BAILEYS"
-            })
+            body: JSON.stringify({ instanceName: INSTANCE_NAME, qrcode: true, integration: 'WHATSAPP-BAILEYS' })
         });
 
-        const data = await resp.json();
-
-        // Acordar a instância caso ela tenha sido criada em estado de dormência (v2 behavior)
-        await fetch(`${EVOLUTION_URL}/instance/start/${INSTANCE_NAME}`, {
-            method: 'GET',
-            headers: { 'apikey': EVOLUTION_API_KEY }
-        });
-
-        // Aguarda 3 segundos para o motor Baileys da Evolution API construir o WebSocket e cuspir o QR
-        await new Promise(r => setTimeout(r, 3000));
-
-        if (data && data.qrcode && data.qrcode.base64) {
-            req.app.locals.lastQrCode = data.qrcode.base64;
-            return res.json({ status: 'QR_CODE', qrCode: data.qrcode.base64 });
-        }
-
-        // Tenta até 3 vezes buscar o QR enquanto a API acorda o Chromium
-        let resData = '';
-        for (let i = 0; i < 3; i++) {
-            const connectResp = await fetch(`${EVOLUTION_URL}/instance/connect/${INSTANCE_NAME}?_qrc=true`, {
-                method: 'GET',
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const connectResp = await fetch(`${EVOLUTION_URL}/instance/connect/${INSTANCE_NAME}`, {
                 headers: { 'apikey': EVOLUTION_API_KEY }
             });
             const connectData = await connectResp.json();
 
             if (connectData && (connectData.base64 || connectData.pairingCode)) {
                 req.app.locals.lastQrCode = connectData.base64 || '';
-                req.app.locals.lastPairingCode = connectData.pairingCode || '';
                 return res.json({
                     status: 'QR_CODE',
                     qrCode: connectData.base64 || '',
                     pairingCode: connectData.pairingCode || ''
                 });
             }
-
-            // Se ela já estiver conectada
-            if (connectData && connectData.instance && connectData.instance.state === 'open') {
+            if (connectData?.instance?.state === 'open') {
                 return res.json({ status: 'CONNECTED', qrCode: '', pairingCode: '' });
             }
-            // Wait 2s before retry
             await new Promise(r => setTimeout(r, 2000));
         }
-
-        res.json({
-            status: 'QR_CODE',
-            qrCode: req.app.locals.lastQrCode || '',
-            pairingCode: req.app.locals.lastPairingCode || ''
-        });
+        res.json({ status: 'QR_CODE', qrCode: req.app.locals.lastQrCode || '' });
     } catch (e) {
-        res.status(500).json({ status: 'DISCONNECTED', error: e.message });
+        res.status(500).json({ error: e.message });
     }
 });
 
 app.post('/api/whatsapp/disconnect', async (req, res) => {
+    if (useCloudAPI()) {
+        return res.json({ status: 'DISCONNECTED', message: 'Cloud API não precisa de desconexão.' });
+    }
     try {
         await fetch(`${EVOLUTION_URL}/instance/logout/${INSTANCE_NAME}`, {
-            method: 'DELETE',
-            headers: { 'apikey': EVOLUTION_API_KEY }
+            method: 'DELETE', headers: { 'apikey': EVOLUTION_API_KEY }
         });
         res.json({ status: 'DISCONNECTED' });
     } catch (e) {
@@ -693,56 +683,79 @@ app.post('/api/whatsapp/disconnect', async (req, res) => {
     }
 });
 
-// Endpoint Automação de Disparo (Evolution API Real)
+// --- Disparo: auto-seleciona Cloud API ou Evolution API ---
 app.post('/api/whatsapp/send', async (req, res) => {
     const { guestId, phone, message } = req.body;
+    const cleanPhone = phone.replace(/\D/g, '');
+    const numberE164 = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
     try {
-        // Verificar se está aberto ("open")
-        const stateResp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${INSTANCE_NAME}`, {
-            headers: { 'apikey': EVOLUTION_API_KEY }
-        });
-        const stateData = await stateResp.json();
-        if (stateData?.instance?.state !== 'open') {
-            await pool.query(`UPDATE guests SET status_envio='Erro' WHERE id=$1`, [guestId]);
-            return res.status(403).json({ error: 'WhatsApp não está conectado na Evolution API' });
-        }
-
-        // Formatar telemóvel para padrão E.164 (55 + DDD + Numero) com ou sem o '@s.whatsapp.net'
-        const cleanPhone = phone.replace(/\D/g, ''); // só os números brutos
-        const numberWpp = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
-
-        // Disparo Real de Mensagem de Texto
-        const sendResp = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
-            body: JSON.stringify({
-                number: numberWpp,
-                options: {
-                    delay: 1500,
-                    presence: 'composing'
+        if (useCloudAPI()) {
+            // --- WhatsApp Cloud API (Meta Oficial) ---
+            const resp = await fetch(`https://graph.facebook.com/${WA_CLOUD_API_VERSION}/${WA_CLOUD_PHONE_ID}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${WA_CLOUD_TOKEN}`
                 },
-                textMessage: {
-                    text: message
-                }
-            })
-        });
+                body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    to: numberE164,
+                    type: 'text',
+                    text: { body: message }
+                })
+            });
 
-        if (!sendResp.ok) {
-            const errData = await sendResp.json().catch(() => ({}));
-            console.error('Evolution API Error:', errData);
-            await pool.query(`UPDATE guests SET status_envio = 'Erro' WHERE id = $1`, [guestId]);
-            return res.status(500).json({ error: 'A Evolution API rejeitou o disparo.', details: errData });
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                console.error('Cloud API Error:', errData);
+                await pool.query(`UPDATE guests SET status_envio = 'Erro' WHERE id = $1`, [guestId]);
+                await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                    [guestId, 'ERRO_ENVIO', `Cloud API: ${errData?.error?.message || JSON.stringify(errData)}`]).catch(() => { });
+                return res.status(500).json({ error: 'Cloud API rejeitou o envio.', details: errData });
+            }
+
+            await pool.query(`UPDATE guests SET status_envio = 'Enviado', data_envio = NOW() WHERE id = $1`, [guestId]);
+            await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                [guestId, 'ENVIO', 'Enviado via WhatsApp Cloud API (oficial Meta)']);
+            return res.json({ success: true, message: 'Enviado via Cloud API ✅' });
+
+        } else {
+            // --- Evolution API (fallback) ---
+            const stateResp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${INSTANCE_NAME}`, {
+                headers: { 'apikey': EVOLUTION_API_KEY }
+            });
+            const stateData = await stateResp.json();
+            if (stateData?.instance?.state !== 'open') {
+                await pool.query(`UPDATE guests SET status_envio='Erro' WHERE id=$1`, [guestId]);
+                return res.status(403).json({ error: 'WhatsApp não conectado na Evolution API' });
+            }
+
+            const sendResp = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+                body: JSON.stringify({
+                    number: numberE164,
+                    options: { delay: 1500, presence: 'composing' },
+                    textMessage: { text: message }
+                })
+            });
+
+            if (!sendResp.ok) {
+                const errData = await sendResp.json().catch(() => ({}));
+                await pool.query(`UPDATE guests SET status_envio = 'Erro' WHERE id = $1`, [guestId]);
+                await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                    [guestId, 'ERRO_ENVIO', `Evolution: ${JSON.stringify(errData)}`]).catch(() => { });
+                return res.status(500).json({ error: 'Evolution API rejeitou o disparo.', details: errData });
+            }
+
+            await pool.query(`UPDATE guests SET status_envio = 'Enviado', data_envio = NOW() WHERE id = $1`, [guestId]);
+            await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                [guestId, 'ENVIO', 'Enviado via Evolution API']);
+            return res.json({ success: true, message: 'Enviado via Evolution API ✅' });
         }
-
-        // Atualizar banco de dados
-        await pool.query(`UPDATE guests SET status_envio = 'Enviado', data_envio = NOW() WHERE id = $1`, [guestId]);
-        // Log permanente
-        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
-            [guestId, 'ENVIO', 'Enviado com sucesso via Evolution API']);
-        res.json({ success: true, message: 'Disparo via Evolution API efetuado com sucesso!' });
     } catch (err) {
         await pool.query(`UPDATE guests SET status_envio = 'Erro' WHERE id = $1`, [guestId]);
-        // Log permanente de erro
         await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
             [guestId, 'ERRO_ENVIO', err.message]).catch(() => { });
         res.status(500).json({ error: err.message });
