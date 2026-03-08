@@ -368,6 +368,13 @@ app.post('/api/guests/:id/rsvp', async (req, res) => {
     const { id } = req.params;
     const { status, nome } = req.body;
     try {
+        // Verificar se já respondeu
+        const existing = await pool.query('SELECT status FROM guests WHERE id = $1', [id]);
+        if (existing.rows.length === 0) return res.status(404).json({ error: 'Convidado não encontrado.' });
+        if (existing.rows[0].status && existing.rows[0].status !== 'Pendente') {
+            return res.status(409).json({ error: 'Já confirmaste a tua presença!', status: existing.rows[0].status });
+        }
+
         const result = await pool.query(`
       UPDATE guests 
       SET status=$1, data_resposta=NOW(), nome=COALESCE($3, nome) 
@@ -375,9 +382,6 @@ app.post('/api/guests/:id/rsvp', async (req, res) => {
       RETURNING *
     `, [status, id, nome || null]);
 
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Convidado não encontrado.' });
-        }
         res.json(result.rows[0]);
     } catch (err) {
         res.status(500).json({ error: err.message });

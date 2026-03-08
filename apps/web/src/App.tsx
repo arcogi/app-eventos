@@ -9,7 +9,7 @@ export default function App() {
   const [respostaDada, setRespostaDada] = useState<'Confirmado' | 'Duvida' | 'Recusado' | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [guestId, setGuestId] = useState<string | null>(null);
-  const [guestData, setGuestData] = useState<{ nome: string, celular: string } | null>(null);
+  const [guestData, setGuestData] = useState<{ nome: string, celular: string, status?: string } | null>(null);
   const [draftNome, setDraftNome] = useState('');
 
   // Controle de Visualização do Vídeo
@@ -42,6 +42,11 @@ export default function App() {
           const data = await res.json();
           setGuestData(data);
           setDraftNome(data.nome || '');
+          // Se já respondeu anteriormente, mostrar mensagem direto
+          if (data.status && data.status !== 'Pendente') {
+            setRespostaDada(data.status);
+            setStatusRSVP('sucesso');
+          }
         }
       } catch (err) { }
     };
@@ -64,6 +69,11 @@ export default function App() {
         body: JSON.stringify({ status, nome: draftNome })
       });
       if (response.ok) {
+        setStatusRSVP('sucesso');
+      } else if (response.status === 409) {
+        // Já respondeu antes
+        const data = await response.json();
+        setRespostaDada(data.status || status);
         setStatusRSVP('sucesso');
       } else {
         setStatusRSVP('erro');
@@ -190,6 +200,17 @@ export default function App() {
                     {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela tua confirmação!') :
                       respostaDada === 'Duvida' ? (config.msg_success_doubt || 'Anotado!') :
                         (config.msg_success_decline || 'Que pena!')}
+                  </p>
+                  {config.video_file && (
+                    <button
+                      onClick={() => { setVideoEnded(false); }}
+                      className="mt-4 w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 border-slate-200 text-slate-500 hover:bg-slate-100 transition-all"
+                    >
+                      🎬 Assistir vídeo novamente
+                    </button>
+                  )}
+                  <p className="text-[9px] text-slate-400 uppercase tracking-widest font-black mt-3">
+                    Podes fechar esta página
                   </p>
                 </div>
               ) : (
