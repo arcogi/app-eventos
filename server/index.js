@@ -257,11 +257,11 @@ app.post('/api/guests/lookup', async (req, res) => {
     }
 });
 
-// --- Reset de Envios (limpa envio + data_envio) ---
+// --- Reset de Envios com Erro (só os com Erro voltam a Pendente) ---
 app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
     try {
-        await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL`);
-        res.json({ success: true, message: 'Envios resetados.' });
+        const result = await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL WHERE status_envio='Erro'`);
+        res.json({ success: true, message: `${result.rowCount} envio(s) com erro resetado(s).` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
