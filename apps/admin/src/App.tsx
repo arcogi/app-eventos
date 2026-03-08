@@ -614,7 +614,7 @@ export default function App() {
     const apelido = g.apelido || g.nome;
     const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
     const linkCode = g.short_code || g.id;
-    const msg = `Olá *${apelido}*, aqui é Família Rein! 🎉\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}`;
+    const msg = `Olá *${apelido}*, aqui é Família Rein! 🎉\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
 
     // Automação via API Evolution Substituindo o Popup:
     try {

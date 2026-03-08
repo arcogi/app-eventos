@@ -173,6 +173,17 @@ async function initDB() {
           );
         `);
 
+        // Histórico permanente de envios e respostas (nunca é apagado por resets)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS guests_history (
+            id SERIAL PRIMARY KEY,
+            guest_id UUID NOT NULL,
+            acao TEXT NOT NULL,
+            detalhes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+        `);
+
         // Inserir linha padrão de config se estiver vazia
         const res = await client.query('SELECT COUNT(*) FROM event_configs');
         if (parseInt(res.rows[0].count) === 0) {
@@ -329,6 +340,22 @@ app.post('/api/guests/rollback', requireAuth, async (req, res) => {
         await pool.query(`DELETE FROM guests_backup WHERE backup_date = $1`, [backup_date]);
 
         res.json({ success: true, message: `Rollback concluído! ${restored} convidado(s) restaurado(s) do backup ${backup_type}.` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Histórico permanente de ações ---
+app.get('/api/guests/history', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT h.*, g.nome, g.celular, g.short_code 
+            FROM guests_history h 
+            LEFT JOIN guests g ON g.id = h.guest_id 
+            ORDER BY h.created_at DESC 
+            LIMIT 500
+        `);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -548,6 +575,10 @@ app.post('/api/guests/:id/rsvp', async (req, res) => {
       RETURNING *
     `, [status, id, nome || null]);
 
+        // Log permanente
+        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+            [id, 'RSVP', `Status: ${status}`]);
+
         res.json(result.rows[0]);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -708,9 +739,15 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
         // Atualizar banco de dados
         await pool.query(`UPDATE guests SET status_envio = 'Enviado', data_envio = NOW() WHERE id = $1`, [guestId]);
+        // Log permanente
+        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+            [guestId, 'ENVIO', 'Enviado com sucesso via Evolution API']);
         res.json({ success: true, message: 'Disparo via Evolution API efetuado com sucesso!' });
     } catch (err) {
         await pool.query(`UPDATE guests SET status_envio = 'Erro' WHERE id = $1`, [guestId]);
+        // Log permanente de erro
+        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+            [guestId, 'ERRO_ENVIO', err.message]).catch(() => { });
         res.status(500).json({ error: err.message });
     }
 });
