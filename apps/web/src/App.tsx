@@ -153,112 +153,117 @@ export default function App() {
             )}
           </div>
 
-          {/* CONTEÚDO E RSVP */}
-          <div className={`p-8 md:p-10 pb-12 text-center transition-all duration-700 flex-1 overflow-y-auto ${config.video_file && !videoEnded ? 'opacity-40 grayscale blur-[1px]' : 'opacity-100 grayscale-0 blur-0'}`}>
-            <div className="flex justify-center gap-6 text-slate-200 mb-6">
-              <Heart size={20} className="fill-slate-100" />
-              <Calendar size={20} className="text-slate-300" />
-              <Heart size={20} className="fill-slate-100" />
-            </div>
-
-            <div className="space-y-3">
-              <h2 className="text-4xl font-serif tracking-tight text-slate-900">Família Rein</h2>
-              <p className="text-slate-500 text-sm leading-relaxed px-2 font-medium">
-                Estamos a preparar algo inesquecível e a tua presença é o que torna tudo real.
+          {/* CONTEÚDO E RSVP — SÓ APARECE APÓS O VÍDEO TERMINAR */}
+          {config.video_file && !videoEnded ? (
+            <div className="p-8 md:p-10 pb-12 text-center">
+              <Heart className="mx-auto mb-4 text-rose-400 fill-rose-400 animate-pulse" size={28} />
+              <p className="text-slate-400 text-[10px] uppercase tracking-[0.2em] font-black leading-relaxed">
+                Assista o vídeo até ao final<br />para desbloquear o convite
               </p>
             </div>
+          ) : (
+            <div className="p-8 md:p-10 pb-12 text-center animate-in fade-in slide-in-from-bottom-6 duration-700 flex-1 overflow-y-auto">
+              <div className="flex justify-center gap-6 text-slate-200 mb-6">
+                <Heart size={20} className="fill-slate-100" />
+                <Calendar size={20} className="text-slate-300" />
+                <Heart size={20} className="fill-slate-100" />
+              </div>
 
-            {statusRSVP === 'sucesso' ? (
-              <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-emerald-100 animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-sm">
-                <div className={`w-16 h-16 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl ${respostaDada === 'Confirmado' ? 'bg-emerald-500 shadow-emerald-200' : respostaDada === 'Duvida' ? 'bg-amber-500 shadow-amber-200' : 'bg-rose-500 shadow-rose-200'}`}>
-                  {respostaDada === 'Confirmado' ? <CheckCircle size={32} /> : respostaDada === 'Duvida' ? <HelpCircle size={32} /> : <XCircle size={32} />}
-                </div>
-                <h3 className="font-black text-slate-800 uppercase text-sm tracking-widest mb-2">Resposta Registada</h3>
-                <p className="text-xs text-slate-600 leading-relaxed font-bold">
-                  {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela tua confirmação!') :
-                    respostaDada === 'Duvida' ? (config.msg_success_doubt || 'Anotado!') :
-                      (config.msg_success_decline || 'Que pena!')}
+              <div className="space-y-3">
+                <h2 className="text-4xl font-serif tracking-tight text-slate-900">Família Rein</h2>
+                <p className="text-slate-500 text-sm leading-relaxed px-2 font-medium">
+                  Estamos a preparar algo inesquecível e a tua presença é o que torna tudo real.
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4 pt-2">
-                {/* AVISO DE LINK INVÁLIDO */}
-                {!guestId && (
-                  <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-tighter leading-tight flex items-center gap-3 text-left">
-                    <HelpCircle size={20} className="shrink-0" />
-                    <span>Modo visualização restrito.<br />Usa o link do WhatsApp para votar.</span>
-                  </div>
-                )}
 
-                {!showRSVP ? (
-                  <div className="flex flex-col gap-3 animate-in slide-in-from-bottom-4 duration-500">
-                    <button
-                      onClick={() => setShowRSVP(true)}
-                      disabled={!videoEnded}
-                      className={`group w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all ${videoEnded
-                        ? 'bg-slate-900 hover:bg-black shadow-slate-300 text-white shadow-xl hover:scale-[1.02] active:scale-95'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed border-2 border-dashed border-slate-200'
-                        }`}
-                    >
-                      Por favor, confirme sua presença
-                    </button>
+              {statusRSVP === 'sucesso' ? (
+                <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-emerald-100 animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-sm mt-6">
+                  <div className={`w-16 h-16 text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl ${respostaDada === 'Confirmado' ? 'bg-emerald-500 shadow-emerald-200' : respostaDada === 'Duvida' ? 'bg-amber-500 shadow-amber-200' : 'bg-rose-500 shadow-rose-200'}`}>
+                    {respostaDada === 'Confirmado' ? <CheckCircle size={32} /> : respostaDada === 'Duvida' ? <HelpCircle size={32} /> : <XCircle size={32} />}
                   </div>
-                ) : (
-                  <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <h3 className="font-black text-slate-800 uppercase text-sm tracking-widest mb-2">Resposta Registada</h3>
+                  <p className="text-xs text-slate-600 leading-relaxed font-bold">
+                    {respostaDada === 'Confirmado' ? (config.msg_success_confirm || 'Obrigado pela tua confirmação!') :
+                      respostaDada === 'Duvida' ? (config.msg_success_doubt || 'Anotado!') :
+                        (config.msg_success_decline || 'Que pena!')}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 pt-2">
+                  {/* AVISO DE LINK INVÁLIDO */}
+                  {!guestId && (
+                    <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-tighter leading-tight flex items-center gap-3 text-left">
+                      <HelpCircle size={20} className="shrink-0" />
+                      <span>Modo visualização restrito.<br />Usa o link do WhatsApp para votar.</span>
+                    </div>
+                  )}
 
-                    {/* UI de Autenticação Aberta do Convidado */}
-                    {guestData && (
-                      <div className="space-y-4 mb-6 pt-4 border-t border-slate-100">
-                        <div className="flex flex-col text-left group">
-                          <input
-                            value={draftNome}
-                            onChange={(e) => setDraftNome(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-[1rem] px-5 py-4 font-black focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all text-sm shadow-inner text-center"
-                          />
-                          <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 ml-1 text-center transition-colors group-focus-within:text-slate-600">Nome Trocado ou Convite para</span>
+                  {!showRSVP ? (
+                    <div className="flex flex-col gap-3 animate-in slide-in-from-bottom-4 duration-500">
+                      <button
+                        onClick={() => setShowRSVP(true)}
+                        className="group w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-slate-900 hover:bg-black shadow-slate-300 text-white shadow-xl hover:scale-[1.02] active:scale-95"
+                      >
+                        Por favor, confirme sua presença
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+                      {/* UI de Autenticação Aberta do Convidado */}
+                      {guestData && (
+                        <div className="space-y-4 mb-6 pt-4 border-t border-slate-100">
+                          <div className="flex flex-col text-left group">
+                            <input
+                              value={draftNome}
+                              onChange={(e) => setDraftNome(e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-[1rem] px-5 py-4 font-black focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all text-sm shadow-inner text-center"
+                            />
+                            <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 ml-1 text-center transition-colors group-focus-within:text-slate-600">Nome Trocado ou Convite para</span>
+                          </div>
+                          <div className="flex flex-col text-left">
+                            <input
+                              value={guestData.celular}
+                              disabled
+                              className="w-full bg-slate-100 border border-slate-200 text-slate-400 rounded-[1rem] px-5 py-4 font-black cursor-not-allowed opacity-60 text-sm text-center"
+                            />
+                            <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 ml-1 text-center">Telemóvel (Bloqueado)</span>
+                          </div>
                         </div>
-                        <div className="flex flex-col text-left">
-                          <input
-                            value={guestData.celular}
-                            disabled
-                            className="w-full bg-slate-100 border border-slate-200 text-slate-400 rounded-[1rem] px-5 py-4 font-black cursor-not-allowed opacity-60 text-sm text-center"
-                          />
-                          <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 ml-1 text-center">Telemóvel (Bloqueado)</span>
-                        </div>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => handleRSVP('Confirmado')}
-                      disabled={statusRSVP === 'enviando'}
-                      className="w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200 text-white shadow-xl hover:scale-[1.02] active:scale-95"
-                    >
-                      <CheckCircle size={20} /> {config.btn_confirm_text || 'Confirmar'}
-                    </button>
+                      )}
+                      <button
+                        onClick={() => handleRSVP('Confirmado')}
+                        disabled={statusRSVP === 'enviando'}
+                        className="w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-emerald-500 hover:bg-emerald-600 shadow-emerald-200 text-white shadow-xl hover:scale-[1.02] active:scale-95"
+                      >
+                        <CheckCircle size={20} /> {config.btn_confirm_text || 'Confirmar'}
+                      </button>
 
-                    <button
-                      onClick={() => handleRSVP('Duvida')}
-                      disabled={statusRSVP === 'enviando'}
-                      className="w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-amber-400 hover:bg-amber-500 shadow-amber-200 text-white shadow-xl hover:scale-[1.02] active:scale-95"
-                    >
-                      <HelpCircle size={20} /> {config.btn_doubt_text || 'Dúvida'}
-                    </button>
+                      <button
+                        onClick={() => handleRSVP('Duvida')}
+                        disabled={statusRSVP === 'enviando'}
+                        className="w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-amber-400 hover:bg-amber-500 shadow-amber-200 text-white shadow-xl hover:scale-[1.02] active:scale-95"
+                      >
+                        <HelpCircle size={20} /> {config.btn_doubt_text || 'Dúvida'}
+                      </button>
 
-                    <button
-                      onClick={() => handleRSVP('Recusado')}
-                      disabled={statusRSVP === 'enviando'}
-                      className="w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-slate-900 hover:bg-black shadow-slate-300 text-white shadow-xl hover:scale-[1.02] active:scale-95"
-                    >
-                      <XCircle size={20} /> {config.btn_decline_text || 'Recusar'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                      <button
+                        onClick={() => handleRSVP('Recusado')}
+                        disabled={statusRSVP === 'enviando'}
+                        className="w-full py-5 rounded-[1.5rem] font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all bg-slate-900 hover:bg-black shadow-slate-300 text-white shadow-xl hover:scale-[1.02] active:scale-95"
+                      >
+                        <XCircle size={20} /> {config.btn_decline_text || 'Recusar'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            <footer className="text-[10px] text-slate-300 font-black uppercase tracking-[0.3em] pt-8 border-t border-slate-50">
-              {config.footer_text || 'familia-rein.cloud • 2026'}
-            </footer>
-          </div>
+              <footer className="text-[10px] text-slate-300 font-black uppercase tracking-[0.3em] pt-8 border-t border-slate-50">
+                {config.footer_text || 'familia-rein.cloud • 2026'}
+              </footer>
+            </div>
+          )}
         </div>
       )
       }
