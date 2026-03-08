@@ -257,7 +257,7 @@ function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClo
       // O nome que vai no texto do excel é do apelido
       const apelido = g.apelido || g.nome;
       const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
-      const msg = `Olá ${apelido}! 🎉 Temos uma notícia especial para ti${textDep}. Assiste até ao fim e confirma a tua presença: https://familia-rein.cloud?guest_id=${g.id}`;
+      const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para ti${textDep}.\n\n🎬 Assiste até ao fim e confirma a tua presença:\n👉 https://familia-rein.cloud/c/${g.id}`;
 
       try {
         await fetch(`${API}/api/whatsapp/send`, {
@@ -544,7 +544,7 @@ export default function App() {
   const handleSendWhatsApp = useCallback(async (g: Guest) => {
     const apelido = g.apelido || g.nome;
     const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
-    const msg = `Olá ${apelido}! 🎉 Temos uma notícia especial para ti${textDep}. Assiste até ao fim: https://familia-rein.cloud?guest_id=${g.id}`;
+    const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para ti${textDep}.\n\n🎬 Assiste até ao fim e confirma a tua presença:\n👉 https://familia-rein.cloud/c/${g.id}`;
 
     // Automação via API Evolution Substituindo o Popup:
     try {

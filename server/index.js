@@ -555,6 +555,11 @@ app.post('/api/whatsapp/send', async (req, res) => {
     }
 });
 
+// --- Rota curta para WhatsApp (ex: /c/uuid → /?guest_id=uuid) ---
+app.get('/c/:id', (req, res) => {
+    res.redirect(301, `/?guest_id=${req.params.id}`);
+});
+
 // --- Fallback do React Router (SPAs) DEPOIS das APIS ---
 app.get('/admin/*', (req, res) => {
     res.sendFile(path.join(__dirname, '../apps/admin/dist', 'index.html'));
