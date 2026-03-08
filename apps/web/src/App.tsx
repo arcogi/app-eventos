@@ -220,9 +220,9 @@ export default function App() {
               {config.slogan || 'Um momento especial se aproxima'}
             </p>
             {config.confirmation_deadline && (
-              <div className="inline-flex items-center gap-2 bg-rose-500/20 border border-rose-500/40 rounded-full px-4 py-1.5 mt-2">
-                <Calendar size={12} className="text-rose-400" />
-                <span className="text-rose-300 text-[10px] font-black uppercase tracking-widest">
+              <div className="inline-flex items-center gap-3 bg-rose-500/20 border border-rose-500/40 rounded-full px-6 py-2.5 mt-3">
+                <Calendar size={16} className="text-rose-400" />
+                <span className="text-rose-300 text-sm font-black uppercase tracking-widest">
                   Confirme até {formatDate(config.confirmation_deadline)}
                 </span>
               </div>
