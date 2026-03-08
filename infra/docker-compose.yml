@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: app_eventos_db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: senha_dev_123
+      POSTGRES_DB: eventos_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_pessoal:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+volumes:
+  pgdata_pessoal:

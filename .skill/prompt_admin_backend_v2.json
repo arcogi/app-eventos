@@ -1,0 +1,26 @@
+{
+    "agent_role": "Engenheiro Backend Sênior (Node.js, PostgreSQL)",
+    "task": "Atualizar a modelagem do Banco de Dados para suportar a Base de Convidados (CRM).",
+    "target_file": "server/index.js",
+    "database_schema": {
+        "table_guests": {
+            "columns": [
+                "id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+                "nome TEXT NOT NULL",
+                "celular TEXT UNIQUE NOT NULL",
+                "idade TEXT CHECK (idade IN ('Menor', 'Adolescente', 'Adulto'))",
+                "sexo TEXT CHECK (sexo IN ('Masculino', 'Feminino'))",
+                "dependentes INTEGER DEFAULT 0",
+                "status TEXT DEFAULT 'Pendente' CHECK (status IN ('Pendente', 'Confirmado', 'Duvida', 'Recusado'))",
+                "data_resposta TIMESTAMP",
+                "tipo_evento TEXT DEFAULT 'Save the Date' CHECK (tipo_evento IN ('Save the Date', 'Convite'))"
+            ],
+            "description": "Base central de convidados. O id UUID será usado na URL enviada por WhatsApp (ex: ?guest_id=uuid) para identificar quem está respondendo no frontend."
+        }
+    },
+    "api_routes": {
+        "GET /api/guests": "Lista toda a base de convidados.",
+        "POST /api/guests": "Cadastra um novo convidado na base (com status 'Pendente').",
+        "POST /api/guests/:id/rsvp": "Rota que o App.tsx (Guest) chama ao clicar no botão. Atualiza o 'status' e seta a 'data_resposta' = NOW() para o UUID específico."
+    }
+}

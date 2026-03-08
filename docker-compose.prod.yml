@@ -1,0 +1,94 @@
+version: '3.8'
+
+networks:
+  arcogi-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  evolution_instances:
+  evolution_store:
+  uploads:
+
+services:
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - "80:80"
+      # - "443:443" # Descomentar após ativar Certbot SSL
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # - ./certbot/conf:/etc/letsencrypt
+      # - ./certbot/www:/var/www/certbot
+    networks:
+      - arcogi-net
+    depends_on:
+      - app-node
+      - evolution-api
+
+  eventos-db:
+    image: postgres:15
+    container_name: eventos-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: ${POSTGRES_DB:-eventos}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - arcogi-net
+
+  evolution-api:
+    image: atendai/evolution-api:v1.8.2
+    container_name: evolution-api
+    restart: always
+    environment:
+      - SERVER_URL=${SERVER_URL:-http://evolution-api:8080}
+      - CORS_ORIGIN=*
+      - CORS_METHODS=POST,GET,PUT,DELETE
+      - CORS_CREDENTIALS=true
+      - AUTHENTICATION_API_KEY=eventos_arcogi_global_123
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@eventos-db:5432/${POSTGRES_DB:-eventos}
+      - CACHE_PROVIDER=memory
+      - CACHE_REDIS_ENABLED=false
+      - REDIS_GLOBAL_CLIENT=false
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - RABBITMQ_GLOBAL_ENABLED=false
+      - WEBSOCKET_GLOBAL_ENABLED=false
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    networks:
+      - arcogi-net
+    depends_on:
+      - eventos-db
+
+  app-node:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: app-node
+    restart: always
+    environment:
+      - PORT=3001
+      - DB_USER=${POSTGRES_USER:-admin}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-admin123}
+      - DB_HOST=eventos-db
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB:-eventos}
+      - JWT_SECRET=${JWT_SECRET:-chave_super_secreta_jwt}
+      - EVOLUTION_URL=http://evolution-api:8080
+      - EVOLUTION_API_KEY=eventos_arcogi_global_123
+      - INSTANCE_NAME=EventosApp
+      - NODE_ENV=production
+    volumes:
+      - uploads:/app/server/uploads
+    networks:
+      - arcogi-net
+    depends_on:
+      - eventos-db

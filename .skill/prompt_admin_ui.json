@@ -1,0 +1,163 @@
+{
+    "agent_role": "Especialista em Frontend (React) e UI/UX (TailwindCSS)",
+    "task": "Criar o Painel de Administração com gestão completa da Base de Convidados e Disparo de WhatsApp.",
+    "target_file": "apps/admin/src/App.tsx",
+    "tech_stack": [
+        "React (useState, useEffect)",
+        "Tailwind CSS",
+        "lucide-react (ícones)"
+    ],
+    "requirements": {
+        "layout_structure": {
+            "type": "Dashboard",
+            "wrapper": "flex h-screen bg-slate-50 text-slate-900 font-sans",
+            "sidebar": {
+                "width": "w-64",
+                "background": "bg-slate-900 text-white",
+                "navigation_state": "abaAtiva ('configuracoes' ou 'convidados')",
+                "menu_items": [
+                    {
+                        "id": "configuracoes",
+                        "label": "Configurar Evento",
+                        "icon": "Settings"
+                    },
+                    {
+                        "id": "convidados",
+                        "label": "Base de Convidados",
+                        "icon": "Users"
+                    }
+                ]
+            },
+            "main_content": "flex-1 p-8 overflow-y-auto"
+        },
+        "views": {
+            "configuracoes": {
+                "title": "Configuração do Convite",
+                "description": "Edite os textos e mídias do evento.",
+                "api_integration": {
+                    "onLoad": "GET /api/config",
+                    "onSave": "POST /api/config"
+                },
+                "form_sections": [
+                    {
+                        "title": "Textos Principais e Mídia",
+                        "fields": [
+                            {
+                                "name": "title",
+                                "label": "Título",
+                                "type": "text"
+                            },
+                            {
+                                "name": "subtitle",
+                                "label": "Subtítulo",
+                                "type": "text"
+                            },
+                            {
+                                "name": "video_url",
+                                "label": "URL do Vídeo",
+                                "type": "url"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "convidados": {
+                "title": "Gestão da Base de Convidados",
+                "api_integration": {
+                    "onLoad": "GET /api/guests",
+                    "onAdd": "POST /api/guests"
+                },
+                "actions_bar": {
+                    "buttons": [
+                        {
+                            "label": "Adicionar Convidado",
+                            "icon": "Plus",
+                            "style": "bg-blue-600 text-white"
+                        },
+                        {
+                            "label": "Disparar WhatsApp (Save the Date)",
+                            "icon": "Send",
+                            "style": "bg-emerald-600 text-white"
+                        }
+                    ]
+                },
+                "add_guest_form": {
+                    "modal_or_section": "Formulário no topo da lista",
+                    "fields": [
+                        {
+                            "name": "nome",
+                            "type": "text",
+                            "label": "Nome Completo"
+                        },
+                        {
+                            "name": "celular",
+                            "type": "tel",
+                            "label": "Celular (WhatsApp)"
+                        },
+                        {
+                            "name": "idade",
+                            "type": "select",
+                            "options": [
+                                "Menor",
+                                "Adolescente",
+                                "Adulto"
+                            ]
+                        },
+                        {
+                            "name": "sexo",
+                            "type": "select",
+                            "options": [
+                                "Masculino",
+                                "Feminino"
+                            ]
+                        },
+                        {
+                            "name": "dependentes",
+                            "type": "number",
+                            "label": "Qtd. Dependentes",
+                            "min": 0
+                        },
+                        {
+                            "name": "tipo_evento",
+                            "type": "select",
+                            "options": [
+                                "Save the Date",
+                                "Convite"
+                            ]
+                        }
+                    ]
+                },
+                "dashboard_cards": [
+                    {
+                        "label": "Total na Base",
+                        "color": "text-blue-600",
+                        "calculation": "Contagem total"
+                    },
+                    {
+                        "label": "Confirmados",
+                        "color": "text-emerald-600",
+                        "calculation": "Status == 'Confirmado'"
+                    },
+                    {
+                        "label": "Pendentes",
+                        "color": "text-slate-500",
+                        "calculation": "Status == 'Pendente'"
+                    }
+                ],
+                "data_table": {
+                    "columns": [
+                        "Nome",
+                        "Celular",
+                        "Idade",
+                        "Sexo",
+                        "Dependentes",
+                        "Status",
+                        "Data Resposta",
+                        "Fase"
+                    ],
+                    "styles": "Tabela responsiva, bordas suaves, status com cores (Verde=Confirmado, Amarelo=Dúvida, Vermelho=Recusado, Cinza=Pendente)."
+                }
+            }
+        }
+    }
+}

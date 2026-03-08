@@ -1,0 +1,22 @@
+{
+    "name": "app-eventos-monorepo",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Sistema Save the Date - Família Rein",
+    "workspaces": [
+        "apps/*",
+        "server"
+    ],
+    "scripts": {
+        "infra:up": "docker-compose -f infra/docker-compose.yml up -d",
+        "infra:down": "docker-compose -f infra/docker-compose.yml down",
+        "install:all": "npm install",
+        "dev:server": "node server/index.js",
+        "dev:admin": "npm run dev --workspace=apps/admin",
+        "dev:web": "npm run dev --workspace=apps/web",
+        "dev": "concurrently \"npm run dev:web\" \"npm run dev:server\" \"npm run dev:admin\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}

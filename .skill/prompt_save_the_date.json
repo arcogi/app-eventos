@@ -1,0 +1,115 @@
+{
+    "agent_role": "Desenvolvedor Frontend Sênior especializado em React e TailwindCSS",
+    "task": "Criar o componente principal (App.jsx/tsx) para um convite digital 'Save the Date'",
+    "target_file": "apps/web/src/App.tsx",
+    "tech_stack": [
+        "React (useState)",
+        "Tailwind CSS (utilitários de animação e layout)",
+        "lucide-react (ícones)"
+    ],
+    "requirements": {
+        "layout_global": {
+            "background": "bg-slate-900",
+            "text_color": "text-white",
+            "alignment": "flex flex-col items-center justify-center min-h-screen p-4 font-sans"
+        },
+        "state_management": {
+            "variable": "iniciado",
+            "type": "boolean",
+            "initial_value": false,
+            "description": "Controla a transição entre a 'capa' do convite e o 'cartão' aberto."
+        },
+        "ui_states": {
+            "estado_01_capa": {
+                "condition": "!iniciado",
+                "animation": "animate-in fade-in duration-1000",
+                "elements": [
+                    {
+                        "type": "title",
+                        "content": "SAVE THE DATE",
+                        "styles": "text-4xl font-extralight tracking-[0.4em] uppercase"
+                    },
+                    {
+                        "type": "subtitle",
+                        "content": "Um momento especial aproxima-se",
+                        "styles": "text-slate-400 tracking-widest text-xs uppercase"
+                    },
+                    {
+                        "type": "button",
+                        "action": "setIniciado(true)",
+                        "icon": "Play (lucide-react, size 40, fill currentColor)",
+                        "styles": "w-24 h-24 bg-white text-slate-900 rounded-full flex items-center justify-center hover:scale-110 transition-transform shadow-[0_0_50px_rgba(255,255,255,0.2)]"
+                    },
+                    {
+                        "type": "helper_text",
+                        "content": "Toca no ecrã para abrir o convite",
+                        "styles": "text-slate-500 text-xs animate-pulse"
+                    }
+                ]
+            },
+            "estado_02_cartao_aberto": {
+                "condition": "iniciado",
+                "animation": "animate-in zoom-in duration-500",
+                "container_styles": "max-w-md w-full bg-white text-slate-800 rounded-[3rem] overflow-hidden shadow-2xl",
+                "elements": [
+                    {
+                        "type": "video_placeholder",
+                        "styles": "aspect-video bg-black relative flex flex-col items-center justify-center",
+                        "overlay": "bg-gradient-to-t from-black/80 to-transparent absolute inset-0",
+                        "text": "Vídeo Mensagem | 'A nossa história continua contigo...'"
+                    },
+                    {
+                        "type": "content_area",
+                        "styles": "p-10 text-center space-y-8",
+                        "components": [
+                            {
+                                "type": "icons_row",
+                                "icons": [
+                                    "Heart",
+                                    "Calendar",
+                                    "Heart"
+                                ],
+                                "styles": "flex justify-center gap-4 text-slate-300"
+                            },
+                            {
+                                "type": "text_block",
+                                "title": "Família Rein",
+                                "body": "Estamos a preparar algo inesquecível e a tua presença é o que torna tudo real."
+                            },
+                            {
+                                "type": "rsvp_buttons",
+                                "wrapper_styles": "pt-4 space-y-3",
+                                "buttons": [
+                                    {
+                                        "order": 1,
+                                        "label": "Confirmar Presença",
+                                        "icon": "CheckCircle",
+                                        "styles": "bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200"
+                                    },
+                                    {
+                                        "order": 2,
+                                        "label": "Ainda não tenho a certeza",
+                                        "icon": "HelpCircle",
+                                        "styles": "bg-amber-500 text-white hover:bg-amber-600 shadow-amber-200"
+                                    },
+                                    {
+                                        "order": 3,
+                                        "label": "Infelizmente não poderei ir",
+                                        "icon": "XCircle",
+                                        "styles": "bg-rose-600 text-white hover:bg-rose-700 shadow-rose-200"
+                                    }
+                                ],
+                                "common_button_styles": "w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
+                            },
+                            {
+                                "type": "footer",
+                                "content": "familia-rein.cloud • 2026",
+                                "styles": "text-[10px] text-slate-400 uppercase tracking-tighter"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

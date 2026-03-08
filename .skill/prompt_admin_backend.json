@@ -1,0 +1,69 @@
+{
+    "agent_role": "Engenheiro Full Stack Sênior (React, Node.js, Express, PostgreSQL)",
+    "task": "Desenvolver o Painel Admin, criar a API no Backend e conectar o 'Save the Date' ao Banco de Dados.",
+    "tech_stack": [
+        "Backend: Node.js, Express, pacote 'pg' (PostgreSQL)",
+        "Frontend Admin: React, Vite, TailwindCSS, lucide-react",
+        "Frontend Guest: Atualização do App.tsx existente para usar fetch()"
+    ],
+    "monorepo_targets": [
+        "server/index.js",
+        "apps/admin/src/App.tsx",
+        "apps/web/src/App.tsx"
+    ],
+    "database_schema": {
+        "table_event_configs": {
+            "columns": [
+                "id SERIAL PRIMARY KEY",
+                "title TEXT",
+                "subtitle TEXT",
+                "video_url TEXT",
+                "btn_confirm_text TEXT",
+                "btn_doubt_text TEXT",
+                "btn_decline_text TEXT",
+                "success_message TEXT",
+                "footer_text TEXT"
+            ],
+            "default_row": "Inserir uma linha padrão se a tabela estiver vazia com os textos do Save the Date da Família Rein."
+        },
+        "table_rsvps": {
+            "columns": [
+                "id SERIAL PRIMARY KEY",
+                "guest_name TEXT",
+                "status TEXT",
+                "created_at TIMESTAMP DEFAULT NOW()"
+            ],
+            "description": "Tabela para armazenar as respostas (Confirmado, Dúvida, Recusado)."
+        }
+    },
+    "execution_phases": {
+        "phase_1_backend": {
+            "file": "server/index.js",
+            "actions": [
+                "Configurar a conexão com o PostgreSQL usando o pacote 'pg' (User: admin, Pass: senha_dev_123, DB: eventos_db, Port: 5432).",
+                "Criar função initDB() para rodar CREATE TABLE IF NOT EXISTS para as duas tabelas no startup.",
+                "Criar rotas GET e POST para '/api/config' (Ler e Atualizar configurações do evento).",
+                "Criar rota POST para '/api/rsvp' (Salvar a resposta do convidado com nome e status).",
+                "Criar rota GET para '/api/rsvp' (Listar todas as respostas para o Admin)."
+            ],
+            "cors": "Ativar middleware CORS para permitir requisições do localhost:5173 e 5174."
+        },
+        "phase_2_admin_app": {
+            "file": "apps/admin/src/App.tsx",
+            "layout": "Dashboard com Sidebar (Menu lateral) e Área Principal (Fundo slate-50).",
+            "views": {
+                "view_configuracoes": "Formulário para editar titulo, subtitulo, urls e textos dos botões. Botão de 'Salvar Alterações' que faz POST para /api/config.",
+                "view_respostas": "Tabela ou lista de cartões mostrando os convidados (guest_name), o que responderam (status) e a data (created_at). Mostrar totalizadores (X Confirmados, Y Dúvidas)."
+            }
+        },
+        "phase_3_guest_app_integration": {
+            "file": "apps/web/src/App.tsx",
+            "actions": [
+                "Adicionar useEffect() para fazer GET em 'http://localhost:3001/api/config' ao carregar e substituir os textos fixos pelo estado recebido do banco.",
+                "Ao clicar num botão de RSVP (Verde, Amarelo ou Vermelho), abrir um pequeno input pedindo o 'Nome do Convidado'.",
+                "Após digitar o nome, fazer POST para 'http://localhost:3001/api/rsvp' com { guest_name, status }.",
+                "Mostrar a 'success_message' vinda do banco de dados agradecendo, com um ícone de Check, e ocultar os botões."
+            ]
+        }
+    }
+}

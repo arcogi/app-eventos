@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: eventos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: senha_dev_123
+      POSTGRES_DB: eventos_db
+    ports:
+      - "5433:5432" # Mantém a 5433 externa se quiser acesso direto pela VPS
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - arcogi-net
+
+  app:
+    build: .
+    container_name: eventos-app
+    restart: unless-stopped
+    ports:
+      - "80:3001" # VPS: Expõe a app na porta 80 nativa (http)
+    depends_on:
+      - db
+    environment:
+      - DB_USER=admin
+      - DB_PASSWORD=senha_dev_123
+      - DB_HOST=db
+      - DB_NAME=eventos_db
+      - DB_PORT=5432
+      - PORT=3001
+    volumes:
+      - ./uploads:/app/server/uploads # Monta os vídeos no host VPS para nunca perder na recriação
+    networks:
+      - arcogi-net
+
+  evolution-api:
+    image: atendai/evolution-api:v1.8.2
+    container_name: evolution-api
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://localhost:8080
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=eventos_arcogi_global_123
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://admin:senha_dev_123@db:5432/eventos_db?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
+      - CACHE_PROVIDER=memory
+      - CACHE_REDIS_ENABLED=false
+      - REDIS_GLOBAL_CLIENT=false
+      - WEBHOOK_GLOBAL_ENABLED=false
+      - RABBITMQ_GLOBAL_ENABLED=false
+      - WEBSOCKET_GLOBAL_ENABLED=false
+    depends_on:
+      - db
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    networks:
+      - arcogi-net
+
+volumes:
+  pgdata:
+  evolution_instances:
+  evolution_store:
+
+networks:
+  arcogi-net:
+    driver: bridge

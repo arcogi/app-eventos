@@ -1,0 +1,28 @@
+{
+    "agent_role": "Engenheiro de DevOps e Frontend (React/Vite)",
+    "task": "Corrigir a infraestrutura e dependências do Painel Admin (apps/admin) para resolver a tela branca e o erro ERR_CONNECTION_REFUSED.",
+    "target_directory": "apps/admin",
+    "troubleshooting_steps": [
+        {
+            "step": 1,
+            "action": "Verificar Dependências Críticas",
+            "details": "Analisar o package.json de 'apps/admin'. Garantir que 'lucide-react', 'tailwindcss', 'postcss' e 'autoprefixer' estão instalados. Se houver conflitos, usar --legacy-peer-deps."
+        },
+        {
+            "step": 2,
+            "action": "Configuração do Tailwind CSS",
+            "details": "Criar/validar os ficheiros 'tailwind.config.js' e 'postcss.config.js' na raiz de 'apps/admin'. O content do tailwind deve apontar para './index.html' e './src/**/*.{js,ts,jsx,tsx}'."
+        },
+        {
+            "step": 3,
+            "action": "Estilos Globais",
+            "details": "Garantir que o ficheiro 'apps/admin/src/index.css' existe e contém obrigatoriamente as diretivas: @tailwind base; @tailwind components; @tailwind utilities;"
+        },
+        {
+            "step": 4,
+            "action": "Ponto de Entrada (main.tsx)",
+            "details": "Verificar se 'apps/admin/src/main.tsx' está a importar o './index.css' corretamente e a renderizar o componente <App /> sem erros de sintaxe."
+        }
+    ],
+    "success_criteria": "Ao rodar 'npm run dev' na pasta apps/admin, o Vite deve iniciar perfeitamente na porta 5173/5174. O navegador deve renderizar o painel sem ecrã branco e os ícones do lucide-react devem estar visíveis."
+}
