@@ -402,8 +402,9 @@ app.get('/api/guests/:id', async (req, res) => {
 // Editar convidado (Inline Edit e Status Envio)
 app.patch('/api/guests/:id', async (req, res) => {
     const { id } = req.params;
-    let { nome, apelido, celular, status_envio } = req.body;
+    let { nome, apelido, celular, status_envio, dependentes } = req.body;
     if (celular) celular = formatPhone(celular);
+    if (dependentes !== undefined) dependentes = parseInt(dependentes) || 0;
     try {
         const result = await pool.query(`
             UPDATE guests 
@@ -411,10 +412,11 @@ app.patch('/api/guests/:id', async (req, res) => {
                 nome = COALESCE($1, nome),
                 apelido = COALESCE($2, apelido),
                 celular = COALESCE($3, celular),
-                status_envio = COALESCE($4, status_envio)
-            WHERE id = $5
+                status_envio = COALESCE($4, status_envio),
+                dependentes = COALESCE($5, dependentes)
+            WHERE id = $6
             RETURNING *
-        `, [nome, apelido, celular, status_envio, id]);
+        `, [nome, apelido, celular, status_envio, dependentes !== undefined ? dependentes : null, id]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Convidado não encontrado.' });

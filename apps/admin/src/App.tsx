@@ -143,7 +143,7 @@ function IPhoneSimulator({ config, onClose }: { config: EventConfig; onClose: ()
 // ── Linha editável na tabela ─────────────────────────────────────────────────
 function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest; onSendWhatsApp: (g: Guest) => void; onDelete: (g: Guest) => void; onRefresh: () => void; }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ nome: guest.nome, apelido: guest.apelido || '', celular: guest.celular });
+  const [draft, setDraft] = useState({ nome: guest.nome, apelido: guest.apelido || '', celular: guest.celular, dependentes: guest.dependentes || 0 });
 
   const saveEdit = async () => {
     try {
@@ -182,6 +182,10 @@ function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest
             <div className="w-full md:w-48 space-y-1">
               <label className="text-[9px] uppercase font-black text-slate-400 ml-1">WhatsApp</label>
               <input value={draft.celular} onChange={(e) => setDraft({ ...draft, celular: e.target.value })} className="w-full px-4 py-2 bg-white rounded-xl text-sm border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400" />
+            </div>
+            <div className="w-full md:w-20 space-y-1">
+              <label className="text-[9px] uppercase font-black text-indigo-400 ml-1">Deps</label>
+              <input type="number" min="0" value={draft.dependentes} onChange={(e) => setDraft({ ...draft, dependentes: parseInt(e.target.value) || 0 })} className="w-full px-3 py-2 bg-indigo-50 rounded-xl text-sm font-black border border-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-300 text-indigo-700 text-center" />
             </div>
             <div className="flex gap-2 self-end">
               <button onClick={saveEdit} className="px-5 py-2 h-[38px] bg-slate-900 text-white rounded-xl text-xs font-black uppercase hover:bg-slate-800 transition-colors">Salvar</button>
