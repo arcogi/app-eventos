@@ -888,6 +888,18 @@ export default function App() {
           </button>
           <button
             onClick={async () => {
+              if (!confirm('⚠️ Resetar TODOS os envios?\nEnviados e Erros voltam para Pendente.\nRespostas RSVP não são afetadas.')) return;
+              const res = await fetch(`${API}/api/guests/reset-envios-todos`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              const data = await res.json();
+              if (res.ok) { alert(`✅ ${data.message}`); fetchData(); }
+              else alert('❌ Erro ao resetar envios.');
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-amber-900/50 text-slate-500 hover:text-amber-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+          >
+            🔁 Reset Todos Envios
+          </button>
+          <button
+            onClick={async () => {
               if (!confirm('⚠️ RESET TOTAL da campanha?\nLimpa: RSVP + data_resposta + envio + data_envio\nTodos os convidados voltam a "Pendente".')) return;
               if (!confirm('🔴 Tem certeza? Isso apaga TODAS as respostas e envios.')) return;
               const res = await fetch(`${API}/api/guests/reset-respostas`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });

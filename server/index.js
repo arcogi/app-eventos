@@ -274,11 +274,22 @@ app.post('/api/guests/lookup', async (req, res) => {
 // --- Reset de Envios com Erro (só os com Erro voltam a Pendente) ---
 app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
     try {
-        // Snapshot antes do reset
         await pool.query(`INSERT INTO guests_backup (backup_type, guest_id, status, status_envio, data_envio, data_resposta)
             SELECT 'reset-envios', id, status, status_envio, data_envio, data_resposta FROM guests WHERE status_envio='Erro'`);
         const result = await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL WHERE status_envio='Erro'`);
         res.json({ success: true, message: `${result.rowCount} envio(s) com erro resetado(s).` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Reset de TODOS os Envios (Enviado+Erro → Pendente) ---
+app.post('/api/guests/reset-envios-todos', requireAuth, async (req, res) => {
+    try {
+        await pool.query(`INSERT INTO guests_backup (backup_type, guest_id, status, status_envio, data_envio, data_resposta)
+            SELECT 'reset-envios-todos', id, status, status_envio, data_envio, data_resposta FROM guests WHERE status_envio != 'Pendente'`);
+        const result = await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL WHERE status_envio != 'Pendente'`);
+        res.json({ success: true, message: `${result.rowCount} envio(s) resetado(s).` });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
