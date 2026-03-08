@@ -355,6 +355,8 @@ export default function App() {
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<string[]>([]);
   const [filtroEnvio, setFiltroEnvio] = useState<string[]>([]);
+  const [filtroSexo, setFiltroSexo] = useState<string[]>([]);
+  const [filtroIdade, setFiltroIdade] = useState<string[]>([]);
   const [showSim, setShowSim] = useState(false);
   const [showDisparo, setShowDisparo] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -474,9 +476,11 @@ export default function App() {
         g.celular.includes(busca);
       const matchStatus = filtroStatus.length === 0 || filtroStatus.includes(g.status);
       const matchEnvio = filtroEnvio.length === 0 || filtroEnvio.includes(g.status_envio || 'Pendente');
-      return matchBusca && matchStatus && matchEnvio;
+      const matchSexo = filtroSexo.length === 0 || filtroSexo.includes(g.sexo || 'Masculino');
+      const matchIdade = filtroIdade.length === 0 || filtroIdade.includes(g.idade || 'Adulto');
+      return matchBusca && matchStatus && matchEnvio && matchSexo && matchIdade;
     }),
-    [guests, busca, filtroStatus, filtroEnvio]
+    [guests, busca, filtroStatus, filtroEnvio, filtroSexo, filtroIdade]
   );
 
   const getCount = (filteredGuests: Guest[]) => filteredGuests.reduce((sum, g) => sum + 1 + Number(g.dependentes || 0), 0);
@@ -873,6 +877,15 @@ export default function App() {
               <Stat label="⏱️ Tempo Médio" value={tempoMedioResposta} color="text-amber-600" />
             </div>
 
+            {/* Demográfico */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <Stat label="♂️ Masculino" value={guests.filter(g => (g.sexo || 'Masculino') === 'Masculino').length} color="text-blue-500" />
+              <Stat label="♀️ Feminino" value={guests.filter(g => g.sexo === 'Feminino').length} color="text-pink-500" />
+              <Stat label="🧑 Adultos" value={guests.filter(g => (g.idade || 'Adulto') === 'Adulto').length} color="text-slate-700" />
+              <Stat label="🧒 Adolescentes" value={guests.filter(g => g.idade === 'Adolescente').length} color="text-amber-500" />
+              <Stat label="👶 Menores" value={guests.filter(g => g.idade === 'Menor').length} color="text-violet-500" />
+            </div>
+
             {failedGuests.length > 0 && (
               <div className="bg-rose-50 border border-rose-200 rounded-[2rem] p-8 shadow-sm">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -945,6 +958,10 @@ export default function App() {
                   <option>Adulto</option><option>Adolescente</option><option>Menor</option>
                 </select>
 
+                <select value={novoGuest.sexo} onChange={e => setNovoGuest({ ...novoGuest, sexo: e.target.value })} className="bg-slate-50 rounded-xl px-4 py-3 font-bold text-sm border border-slate-200">
+                  <option>Masculino</option><option>Feminino</option>
+                </select>
+
                 <div className="flex flex-col justify-center px-4 bg-slate-50 rounded-xl border border-slate-200">
                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">+ Deps</span>
                   <input type="number" min="0" value={novoGuest.dependentes} onChange={e => setNovoGuest({ ...novoGuest, dependentes: parseInt(e.target.value) || 0 })} className="w-12 bg-transparent border-none text-center font-black text-sm focus:outline-none p-0 h-5" />
@@ -1010,6 +1027,50 @@ export default function App() {
                   })}
                   {filtroEnvio.length > 0 && (
                     <button onClick={() => setFiltroEnvio([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                  )}
+                </div>
+                {/* Chips de filtro Sexo */}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">SEXO:</span>
+                  {([['Masculino', '♂️', 'blue'], ['Feminino', '♀️', 'pink']] as const).map(([val, emoji, color]) => {
+                    const active = filtroSexo.includes(val);
+                    const toggle = () => setFiltroSexo(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                    return (
+                      <button key={val} onClick={toggle}
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                          ? color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' : 'bg-pink-500 border-pink-500 text-white'
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}
+                      >
+                        {emoji} {val}
+                      </button>
+                    );
+                  })}
+                  {filtroSexo.length > 0 && (
+                    <button onClick={() => setFiltroSexo([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                  )}
+                </div>
+                {/* Chips de filtro Idade */}
+                <div className="flex flex-wrap gap-2 items-center">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">IDADE:</span>
+                  {([['Adulto', '🧑', 'slate'], ['Adolescente', '🧒', 'amber'], ['Menor', '👶', 'violet']] as const).map(([val, emoji, color]) => {
+                    const active = filtroIdade.includes(val);
+                    const toggle = () => setFiltroIdade(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                    return (
+                      <button key={val} onClick={toggle}
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                          ? color === 'amber' ? 'bg-amber-500 border-amber-500 text-white' :
+                            color === 'violet' ? 'bg-violet-500 border-violet-500 text-white' :
+                              'bg-slate-700 border-slate-700 text-white'
+                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}
+                      >
+                        {emoji} {val}
+                      </button>
+                    );
+                  })}
+                  {filtroIdade.length > 0 && (
+                    <button onClick={() => setFiltroIdade([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
                   )}
                 </div>
               </div>
