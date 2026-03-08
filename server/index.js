@@ -246,7 +246,7 @@ app.post('/api/guests/lookup', async (req, res) => {
     }
 });
 
-// --- Reset de Envios ---
+// --- Reset de Envios (limpa envio + data_envio) ---
 app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
     try {
         await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL`);
@@ -256,11 +256,11 @@ app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
     }
 });
 
-// --- Reset de Respostas ---
+// --- Reset de Respostas (limpa tudo: status RSVP + datas + envio) ---
 app.post('/api/guests/reset-respostas', requireAuth, async (req, res) => {
     try {
-        await pool.query(`UPDATE guests SET status='Pendente', data_resposta=NULL`);
-        res.json({ success: true, message: 'Respostas resetadas.' });
+        await pool.query(`UPDATE guests SET status='Pendente', data_resposta=NULL, status_envio='Pendente', data_envio=NULL`);
+        res.json({ success: true, message: 'Respostas e envios resetados.' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

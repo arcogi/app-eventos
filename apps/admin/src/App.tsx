@@ -821,9 +821,9 @@ export default function App() {
           </button>
           <button
             onClick={async () => {
-              if (!confirm('⚠️ Resetar status de envio para todos os convidados?\nIsso não apaga as respostas RSVP.')) return;
+              if (!confirm('⚠️ Resetar status de envio para todos os convidados?\nLimpa: status_envio + data_envio\nNão apaga respostas RSVP.')) return;
               const res = await fetch(`${API}/api/guests/reset-envios`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              if (res.ok) alert('✅ Envios resetados!');
+              if (res.ok) { alert('✅ Envios resetados! (status_envio + data_envio)'); fetchData(); }
               else alert('❌ Erro ao resetar envios.');
             }}
             className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
@@ -832,10 +832,10 @@ export default function App() {
           </button>
           <button
             onClick={async () => {
-              if (!confirm('⚠️ Resetar TODAS as respostas RSVP dos convidados?\nEsta ação não pode ser desfeita!')) return;
-              if (!confirm('🔴 Tens a certeza? Todos os status voltarão a "Pendente".')) return;
+              if (!confirm('⚠️ RESET TOTAL da campanha?\nLimpa: RSVP + data_resposta + envio + data_envio\nTodos os convidados voltam a "Pendente".')) return;
+              if (!confirm('🔴 Tem certeza? Isso apaga TODAS as respostas e envios.')) return;
               const res = await fetch(`${API}/api/guests/reset-respostas`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              if (res.ok) { alert('✅ Respostas resetadas!'); fetchData(); }
+              if (res.ok) { alert('✅ Campanha resetada! (RSVP + envios + todas as datas)'); fetchData(); }
               else alert('❌ Erro ao resetar respostas.');
             }}
             className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-rose-900/50 text-slate-500 hover:text-rose-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
