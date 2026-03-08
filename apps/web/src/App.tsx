@@ -64,21 +64,44 @@ export default function App() {
     if (id) fetchGuestData(id);
   }, []);
 
-  // Verificação de telemóvel (só se houver guest_id — link do WhatsApp)
+  // Verificação de telemóvel — funciona com ou sem guest_id
   const handleVerify = async () => {
     if (!teleInput.trim()) { setTeleErro('Insere o teu telemóvel com DDD.'); return; }
     setTeleCarregando(true);
     setTeleErro('');
     try {
-      const res = await fetch(`${API}/api/guests/${guestId}/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ celular: teleInput })
-      });
-      if (res.ok) {
-        setVerificado(true);
+      if (guestId) {
+        // COM guest_id: verifica se o telemóvel corresponde ao registo
+        const res = await fetch(`${API}/api/guests/${guestId}/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ celular: teleInput })
+        });
+        if (res.ok) {
+          setVerificado(true);
+        } else {
+          setTeleErro('❌ Número não coincide com o convite. Tenta novamente.');
+        }
       } else {
-        setTeleErro('❌ Número não coincide com o convite. Tenta novamente.');
+        // SEM guest_id: procura pelo telemóvel (lookup)
+        const res = await fetch(`${API}/api/guests/lookup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ celular: teleInput })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGuestId(data.id);
+          setDraftNome(data.nome || '');
+          setGuestData({ nome: data.nome, celular: teleInput, status: data.status });
+          setVerificado(true);
+          if (data.status && data.status !== 'Pendente') {
+            setRespostaDada(data.status);
+            setStatusRSVP('sucesso');
+          }
+        } else {
+          setTeleErro('❌ Nenhum convite encontrado com este número. Verifica o DDD.');
+        }
       }
     } catch (e) {
       setTeleErro('Erro de ligação. Verifica a internet.');
@@ -164,10 +187,10 @@ export default function App() {
   );
 
   const hasVideo = !!config.video_file;
-  // Se não há guest_id (acesso directo), pula verificação
-  const precisaVerificar = hasVideo && guestId && !verificado;
-  const showingVideo = iniciado && hasVideo && !videoEnded && (verificado || !guestId);
-  const showingRSVP = iniciado && (!hasVideo || videoEnded);
+  // SEGURANÇA: sempre exigir verificação antes de qualquer conteúdo
+  const precisaVerificar = iniciado && !verificado;
+  const showingVideo = iniciado && verificado && hasVideo && !videoEnded;
+  const showingRSVP = iniciado && verificado && (!hasVideo || videoEnded);
 
   return (
     <div className="bg-slate-900 text-white flex flex-col items-center justify-center min-h-screen font-sans">
