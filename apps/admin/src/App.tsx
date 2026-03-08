@@ -354,6 +354,7 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -693,12 +694,18 @@ export default function App() {
           </div>
           <div>
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Senha</label>
-            <input
-              type="password" required
-              value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
-              className="w-full bg-white/10 border border-white/10 text-white rounded-xl px-4 py-3 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500 placeholder:text-slate-500 text-sm"
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'} required
+                value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
+                className="w-full bg-white/10 border border-white/10 text-white rounded-xl px-4 py-3 pr-12 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500 placeholder:text-slate-500 text-sm"
+                placeholder="••••••••"
+              />
+              <button type="button" onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors">
+                {showPassword ? <Eye size={16} /> : <Eye size={16} className="opacity-40" />}
+              </button>
+            </div>
           </div>
           {loginError && (
             <p className="text-rose-400 text-xs font-bold text-center bg-rose-500/10 py-2 px-4 rounded-lg">{loginError}</p>

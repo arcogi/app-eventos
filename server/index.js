@@ -10,8 +10,9 @@ require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'arcogi_eventos_jwt_secret_2026';
 // Admin credentials: admin@admin.com / Qaz2026!@#
-const ADMIN_EMAIL = 'admin@admin.com';
-const ADMIN_HASH = '$2a$10$4skmRhqRObXmk9mPuDpqpODiAuDdOHJkJkAYwv6qCH2V13NLLKPwW';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@admin.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Qaz2026!@#';
+const ADMIN_HASH = bcrypt.hashSync(ADMIN_PASSWORD, 10);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
