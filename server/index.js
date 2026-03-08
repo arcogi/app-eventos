@@ -227,6 +227,25 @@ app.post('/api/guests/:id/verify', async (req, res) => {
     }
 });
 
+// --- Lookup por telemóvel (WhatsApp Web / browser sem guest_id) ---
+app.post('/api/guests/lookup', async (req, res) => {
+    const { celular } = req.body;
+    if (!celular) return res.status(400).json({ error: 'Telemóvel obrigatório.' });
+    try {
+        const clean = (s) => String(s).replace(/\D/g, '');
+        const input = clean(celular);
+        // Procura por últimos 8 dígitos para suportar com/sem código do país
+        const result = await pool.query(
+            `SELECT id, nome, status FROM guests WHERE REGEXP_REPLACE(celular, '[^0-9]', '', 'g') LIKE $1`,
+            [`%${input.slice(-9)}`]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Nenhum convite encontrado com este número.' });
+        res.json({ id: result.rows[0].id, nome: result.rows[0].nome, status: result.rows[0].status });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- Reset de Envios ---
 app.post('/api/guests/reset-envios', requireAuth, async (req, res) => {
     try {

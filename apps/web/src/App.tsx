@@ -5,10 +5,16 @@ const API = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
 export default function App() {
   const [iniciado, setIniciado] = useState(false);
-  const [verificado, setVerificado] = useState(false);      // Segurança: telemóvel confirmado
+  const [verificado, setVerificado] = useState(false);
   const [teleInput, setTeleInput] = useState('');
   const [teleErro, setTeleErro] = useState('');
   const [teleCarregando, setTeleCarregando] = useState(false);
+
+  // Lookup por telemóvel (sem guest_id — WhatsApp Web / browser desktop)
+  const [lookupMode, setLookupMode] = useState(false);
+  const [lookupInput, setLookupInput] = useState('');
+  const [lookupErro, setLookupErro] = useState('');
+  const [lookupLoading, setLookupLoading] = useState(false);
 
   const [statusRSVP, setStatusRSVP] = useState<'pendente' | 'enviando' | 'sucesso' | 'erro'>('pendente');
   const [respostaDada, setRespostaDada] = useState<'Confirmado' | 'Duvida' | 'Recusado' | null>(null);
@@ -78,6 +84,39 @@ export default function App() {
       setTeleErro('Erro de ligação. Verifica a internet.');
     } finally {
       setTeleCarregando(false);
+    }
+  };
+
+  // Lookup de convite por telemóvel (para WhatsApp Web / browser desktop)
+  const handleLookup = async () => {
+    if (!lookupInput.trim()) { setLookupErro('Insere o teu número com DDD.'); return; }
+    setLookupLoading(true);
+    setLookupErro('');
+    try {
+      const res = await fetch(`${API}/api/guests/lookup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ celular: lookupInput })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setGuestId(data.id);
+        setDraftNome(data.nome || '');
+        setGuestData({ nome: data.nome, celular: lookupInput, status: data.status });
+        setLookupMode(false);
+        setVerificado(true); // já verificou pelo telemóvel
+        if (data.status && data.status !== 'Pendente') {
+          setRespostaDada(data.status);
+          setStatusRSVP('sucesso');
+        }
+      } else {
+        const d = await res.json();
+        setLookupErro(d.error || 'Número não encontrado. Verifica o DDD e tenta novamente.');
+      }
+    } catch (e) {
+      setLookupErro('Erro de ligação. Verifica a internet.');
+    } finally {
+      setLookupLoading(false);
     }
   };
 
@@ -327,11 +366,45 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {/* ── Sem guest_id: permite identificação por telemóvel ── */}
                   {!guestId && (
-                    <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-tighter leading-tight flex items-center gap-3 text-left">
-                      <HelpCircle size={20} className="shrink-0" />
-                      <span>Modo visualização restrito.<br />Usa o link do WhatsApp para votar.</span>
-                    </div>
+                    lookupMode ? (
+                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3 animate-in fade-in duration-300">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 flex items-center gap-2">
+                          <Phone size={13} /> Identifica-te pelo telemóvel
+                        </p>
+                        <input
+                          type="tel"
+                          placeholder="DDD + Número (ex: 11 99999-9999)"
+                          value={lookupInput}
+                          onChange={(e) => setLookupInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-slate-300"
+                          autoFocus
+                        />
+                        {lookupErro && <p className="text-rose-500 text-xs font-bold">{lookupErro}</p>}
+                        <div className="flex gap-2">
+                          <button onClick={handleLookup} disabled={lookupLoading}
+                            className="flex-1 py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all disabled:opacity-50">
+                            {lookupLoading ? 'A procurar...' : 'Encontrar Convite'}
+                          </button>
+                          <button onClick={() => setLookupMode(false)}
+                            className="px-4 py-3 rounded-xl border border-slate-200 text-slate-400 font-bold text-[10px] uppercase tracking-widest hover:bg-slate-100 transition-all">
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-3">
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-wider">
+                          📱 Recebeste o convite pelo WhatsApp?
+                        </p>
+                        <button onClick={() => setLookupMode(true)}
+                          className="w-full py-3 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-black transition-all active:scale-95">
+                          🎟️ Tenho um convite
+                        </button>
+                      </div>
+                    )
                   )}
 
                   {!showRSVP ? (
