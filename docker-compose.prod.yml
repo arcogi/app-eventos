@@ -12,16 +12,14 @@ volumes:
 
 services:
   nginx-proxy:
-    image: nginx:alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
     container_name: nginx-proxy
     restart: always
     ports:
       - "80:80"
       # - "443:443" # Descomentar após ativar Certbot SSL
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      # - ./certbot/conf:/etc/letsencrypt
-      # - ./certbot/www:/var/www/certbot
     networks:
       - arcogi-net
     depends_on:
