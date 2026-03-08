@@ -274,6 +274,7 @@ function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest
 function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClose: () => void; onRefresh: () => void; }) {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const pendentes = useMemo(() => guests.filter(g => (g.status_envio || 'Pendente') === 'Pendente' || g.status_envio === 'Erro'), [guests]);
 
   const [running, setRunning] = useState(false);
@@ -285,10 +286,10 @@ function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClo
 
     while (currentStep < pendentes.length) {
       const g = pendentes[currentStep];
-      // O nome que vai no texto do excel é do apelido
       const apelido = g.apelido || g.nome;
       const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
-      const msg = `Olá *${apelido}*! 🎉\n\nTemos uma notícia especial para ti${textDep}.\n\n🎬 Assiste até ao fim e confirma a tua presença:\n👉 https://familia-rein.cloud/c/${g.id}`;
+      const linkCode = g.short_code || g.id;
+      const msg = `Olá *${apelido}*, aqui é Família Rein! 🎉\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
 
       try {
         await fetch(`${API}/api/whatsapp/send`, {
@@ -300,8 +301,16 @@ function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClo
       currentStep++;
       setStep(currentStep);
 
-      // Delay to avoid spamming the mocked API
-      await new Promise(r => setTimeout(r, 1000));
+      // Anti-spam: delay aleatório entre 8-15 segundos (recomendação WhatsApp)
+      if (currentStep < pendentes.length) {
+        const delay = Math.floor(Math.random() * 7000) + 8000; // 8-15s
+        const seconds = Math.ceil(delay / 1000);
+        for (let i = seconds; i > 0; i--) {
+          setCountdown(i);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        setCountdown(0);
+      }
     }
 
     setDone(true);
@@ -319,8 +328,18 @@ function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClo
           </div>
           <h3 className="text-2xl font-black tracking-tighter text-slate-900 uppercase">Fila de Disparo</h3>
           <p className="text-slate-500 text-sm font-medium">
-            {done ? 'Fila concluída.' : `Disparando para ${pendentes.length} pendentes`}
+            {done ? 'Fila concluída.' : running ? `${step}/${pendentes.length} enviados` : `${pendentes.length} pendentes`}
           </p>
+          {running && countdown > 0 && (
+            <p className="text-amber-600 text-xs font-black uppercase tracking-widest animate-pulse">
+              ⏱️ Próximo envio em {countdown}s (anti-spam)
+            </p>
+          )}
+          {running && pendentes.length > 0 && (
+            <p className="text-slate-400 text-[10px]">
+              Tempo estimado: ~{Math.ceil((pendentes.length - step) * 12 / 60)} min restantes
+            </p>
+          )}
         </div>
 
         <div className="h-3 bg-slate-100 rounded-full mb-8 overflow-hidden">
@@ -756,8 +775,8 @@ export default function App() {
     for (const fg of failedGuests) {
       // O handleSendWhatsApp abre janela nativamente e atualiza o estado para "Enviado"
       await handleSendWhatsApp(fg);
-      // Delay de 1500ms para evitar bloqueios popup do browser e garantir carregamento do WhatsApp Web
-      await new Promise(r => setTimeout(r, 1500));
+      // Anti-spam: delay aleatório entre 8-15 segundos
+      await new Promise(r => setTimeout(r, Math.floor(Math.random() * 7000) + 8000));
     }
     notify('Sucesso: Todos os links de recuperação foram entregues ao roteador!', 'sucesso');
   };
