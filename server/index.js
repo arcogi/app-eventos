@@ -342,6 +342,10 @@ app.post('/api/guests/bulk', async (req, res) => {
             }
 
             try {
+                // Validar idade e sexo com fallback
+                const idadeValida = ['Adulto', 'Adolescente', 'Menor'].includes(guest.idade) ? guest.idade : 'Adulto';
+                const sexoValido = ['Masculino', 'Feminino'].includes(guest.sexo) ? guest.sexo : 'Masculino';
+
                 const queryRes = await client.query(`
                     INSERT INTO guests (nome, apelido, celular, dependentes, idade, sexo, status, tipo_evento)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -349,17 +353,19 @@ app.post('/api/guests/bulk', async (req, res) => {
                     SET 
                       dependentes = EXCLUDED.dependentes,
                       apelido = EXCLUDED.apelido,
-                      nome = EXCLUDED.nome
+                      nome = EXCLUDED.nome,
+                      idade = EXCLUDED.idade,
+                      sexo = EXCLUDED.sexo
                     RETURNING id
                 `, [
                     guest.nome,
                     guest.apelido || guest.nome,
                     celularFormatado,
                     guest.dependentes || 0,
-                    'Adulto', // fallback
-                    'Masculino', // fallback
-                    'Pendente', // Forçado pela interface SD
-                    'Save the Date' // Forçado pela interface SD
+                    idadeValida,
+                    sexoValido,
+                    'Pendente',
+                    'Save the Date'
                 ]);
 
                 // Se RETURNING id retornou algo, a linha foi criada de facto

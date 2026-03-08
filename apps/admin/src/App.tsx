@@ -647,13 +647,33 @@ export default function App() {
           return newRow;
         });
 
-        // Mapear colunas do Excel para API
+        // Mapear colunas do Excel para API com validação
+        const IDADES_VALIDAS = ['Adulto', 'Adolescente', 'Menor'];
+        const SEXOS_VALIDOS = ['Masculino', 'Feminino'];
+
+        const normalizaIdade = (v: any): string => {
+          if (!v) return 'Adulto';
+          const s = String(v).trim().toLowerCase();
+          if (s.includes('adolesc')) return 'Adolescente';
+          if (s.includes('menor') || s.includes('crian') || s.includes('beb')) return 'Menor';
+          return 'Adulto';
+        };
+
+        const normalizaSexo = (v: any): string => {
+          if (!v) return 'Masculino';
+          const s = String(v).trim().toLowerCase();
+          if (s.startsWith('f')) return 'Feminino';
+          return 'Masculino';
+        };
+
         const guestsArr = sanitizedData.map((row: any) => ({
-          nome: row.nome || 'Sem Nome',
-          apelido: row.apelido || row.nome || '',
-          celular: String(row.whatsapp || row.celular || ''),
-          dependentes: parseInt(String(row.acompanhantes || row.dependentes || row.depedentes || '0')) || 0
-        })).filter(g => g.celular); // Ignora linhas sem telemóvel
+          nome: String(row.nome || 'Sem Nome').trim(),
+          apelido: String(row.apelido || row.nome || '').trim(),
+          celular: String(row.whatsapp || row.celular || '').trim(),
+          idade: normalizaIdade(row.idade),
+          sexo: normalizaSexo(row.sexo),
+          dependentes: parseInt(String(row.dependente || row.dependentes || row.acompanhantes || row.depedentes || '0')) || 0
+        })).filter(g => g.celular); // Ignora linhas sem celular
 
         if (guestsArr.length === 0) {
           return notify('Nenhuma linha válida encontrada no Excel (verifique a coluna WhatsApp/Celular)', 'erro');
