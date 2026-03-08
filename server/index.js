@@ -35,7 +35,7 @@ app.use(cors({
         'http://187.124.82.41:3001'
     ]
 }));
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '200mb' }));
 
 // Garantir diretório de uploads
 const uploadDir = path.join(__dirname, 'uploads', 'videos');
@@ -89,7 +89,7 @@ const storage = multer.diskStorage({
         cb(null, 'vps_' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage: storage, limits: { fileSize: 100 * 1024 * 1024 } }); // 100MB max
+const upload = multer({ storage: storage, limits: { fileSize: 200 * 1024 * 1024 } }); // 200MB max
 
 // Inicialização do Banco de Dados
 async function initDB() {
