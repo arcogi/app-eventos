@@ -492,6 +492,9 @@ export default function App() {
 
   const dependentesCount = useMemo(() => guests.reduce((sum, g) => sum + Number(g.dependentes || 0), 0), [guests]);
 
+  // 🎯 Total real esperado na festa (Confirmados + Dúvida, com dependentes)
+  const presencasEsperadas = useMemo(() => getCount(guests.filter(g => g.status === 'Confirmado' || g.status === 'Duvida')), [guests]);
+
   const disparoPendentesCount = useMemo(() => guests.filter(g => (g.status_envio || 'Pendente') === 'Pendente').length, [guests]);
   const failedGuests = useMemo(() => guests.filter(g => g.status_envio === 'Erro'), [guests]);
 
@@ -887,6 +890,15 @@ export default function App() {
               <Stat label="Pendente" value={rsvpPendentesCount} color="text-amber-500" />
               <Stat label="Dependentes" value={dependentesCount} color="text-indigo-500" />
               <Stat label="Falhas" value={failedGuests.length} color="text-rose-600" alert={failedGuests.length > 0} />
+            </div>
+
+            {/* 🎯 Presenças Esperadas */}
+            <div className="bg-gradient-to-r from-emerald-50 to-blue-50 border-2 border-emerald-200 rounded-[2rem] p-8 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-black text-emerald-600 tracking-widest">🎯 Presenças Esperadas na Festa</span>
+                <p className="text-[9px] text-slate-500 font-bold mt-1">Confirmados + Dúvida (convidados + dependentes)</p>
+              </div>
+              <span className="text-6xl font-black text-emerald-600 tracking-tighter">{presencasEsperadas}</span>
             </div>
 
             {/* CRM Analytics */}
