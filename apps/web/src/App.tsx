@@ -313,6 +313,13 @@ export default function App() {
             playsInline
             autoPlay
             onContextMenu={(e) => e.preventDefault()}
+            onPlay={() => {
+              // Auto-fullscreen no celular
+              const v = videoRef.current;
+              if (v && window.innerWidth < 768) {
+                try { v.requestFullscreen?.() || (v as any).webkitEnterFullscreen?.(); } catch { }
+              }
+            }}
             onEnded={() => setVideoEnded(true)}
             onError={() => setVideoEnded(true)}
             src={`${API}/uploads/videos/${config.video_file}`}
