@@ -201,10 +201,18 @@ export default function App() {
       {!iniciado && (
         <div className="flex flex-col items-center justify-center min-h-screen p-8 space-y-10 animate-in fade-in duration-1000">
           <div className="text-center space-y-3">
-            <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.4em] font-black">SAVE THE DATE</p>
-            <h1 className="text-5xl font-extralight tracking-[0.4em] uppercase text-white/90">
-              {config.event_name || 'Família Rein'}
-            </h1>
+            {config.event_name ? (
+              <>
+                <p className="text-rose-400/80 text-[9px] uppercase tracking-[0.4em] font-black">SAVE THE DATE</p>
+                <h1 className="text-5xl font-extralight tracking-[0.4em] uppercase text-white/90">
+                  {config.event_name}
+                </h1>
+              </>
+            ) : (
+              <h1 className="text-5xl font-extralight tracking-[0.4em] uppercase text-white/90">
+                SAVE THE DATE
+              </h1>
+            )}
             {config.honorees && (
               <p className="text-white/80 text-2xl font-light tracking-wider">{config.honorees}</p>
             )}
