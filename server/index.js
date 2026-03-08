@@ -188,14 +188,24 @@ app.get('/api/guests', async (req, res) => {
     }
 });
 
+function formatPhone(phone) {
+    if (!phone) return '';
+    let cleaned = String(phone).replace(/\D/g, '');
+    if (cleaned.startsWith('55') && cleaned.length >= 12) {
+        cleaned = cleaned.substring(2);
+    }
+    return cleaned;
+}
+
 app.post('/api/guests', async (req, res) => {
     const { nome, apelido, celular, idade, sexo, dependentes, tipo_evento } = req.body;
+    const celularFormatado = formatPhone(celular);
     try {
         const result = await pool.query(`
       INSERT INTO guests (nome, apelido, celular, idade, sexo, dependentes, tipo_evento)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
-    `, [nome, apelido || nome, celular, idade, sexo, dependentes || 0, tipo_evento || 'Save the Date']);
+    `, [nome, apelido || nome, celularFormatado, idade, sexo, dependentes || 0, tipo_evento || 'Save the Date']);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         if (err.code === '23505') {
@@ -218,6 +228,12 @@ app.post('/api/guests/bulk', async (req, res) => {
         let erros = 0;
 
         for (const guest of guests) {
+            const celularFormatado = formatPhone(guest.celular);
+            if (!celularFormatado) {
+                erros++;
+                continue;
+            }
+
             try {
                 const queryRes = await client.query(`
                     INSERT INTO guests (nome, apelido, celular, dependentes, idade, sexo, status, tipo_evento)
@@ -231,7 +247,7 @@ app.post('/api/guests/bulk', async (req, res) => {
                 `, [
                     guest.nome,
                     guest.apelido || guest.nome,
-                    guest.celular,
+                    celularFormatado,
                     guest.dependentes || 0,
                     'Adulto', // fallback
                     'Masculino', // fallback
@@ -258,10 +274,23 @@ app.post('/api/guests/bulk', async (req, res) => {
     }
 });
 
+// Obter dados de um convidado específico
+app.get('/api/guests/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('SELECT id, nome, apelido, celular, status FROM guests WHERE id = $1', [id]);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Convidado não encontrado.' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Editar convidado (Inline Edit e Status Envio)
 app.patch('/api/guests/:id', async (req, res) => {
     const { id } = req.params;
-    const { nome, apelido, celular, status_envio } = req.body;
+    let { nome, apelido, celular, status_envio } = req.body;
+    if (celular) celular = formatPhone(celular);
     try {
         const result = await pool.query(`
             UPDATE guests 
@@ -307,14 +336,14 @@ app.delete('/api/guests', async (req, res) => {
 // Rota de RSVP via Link Único (UUID)
 app.post('/api/guests/:id/rsvp', async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, nome } = req.body;
     try {
         const result = await pool.query(`
       UPDATE guests 
-      SET status=$1, data_resposta=NOW() 
+      SET status=$1, data_resposta=NOW(), nome=COALESCE($3, nome) 
       WHERE id=$2
       RETURNING *
-    `, [status, id]);
+    `, [status, id, nome || null]);
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Convidado não encontrado.' });

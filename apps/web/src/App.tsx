@@ -9,6 +9,8 @@ export default function App() {
   const [respostaDada, setRespostaDada] = useState<'Confirmado' | 'Duvida' | 'Recusado' | null>(null);
   const [config, setConfig] = useState<any>(null);
   const [guestId, setGuestId] = useState<string | null>(null);
+  const [guestData, setGuestData] = useState<{ nome: string, celular: string } | null>(null);
+  const [draftNome, setDraftNome] = useState('');
 
   // Controle de Visualização do Vídeo
   const [videoEnded, setVideoEnded] = useState(false);
@@ -35,7 +37,20 @@ export default function App() {
         console.error('Erro ao conectar com a API:', error);
       }
     };
+
+    const fetchGuestData = async (gId: string) => {
+      try {
+        const res = await fetch(`${API}/api/guests/${gId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setGuestData(data);
+          setDraftNome(data.nome || '');
+        }
+      } catch (err) { }
+    }
+
     fetchConfig();
+    if (id) fetchGuestData(id);
   }, []);
 
   const handleRSVP = async (status: 'Confirmado' | 'Duvida' | 'Recusado') => {
@@ -51,7 +66,7 @@ export default function App() {
       const response = await fetch(`${API}/api/guests/${guestId}/rsvp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, nome: draftNome })
       });
 
       if (response.ok) {
@@ -190,6 +205,28 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+                    {/* UI de Autenticação Aberta do Convidado */}
+                    {guestData && (
+                      <div className="space-y-4 mb-6 pt-4 border-t border-slate-100">
+                        <div className="flex flex-col text-left group">
+                          <input
+                            value={draftNome}
+                            onChange={(e) => setDraftNome(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-[1rem] px-5 py-4 font-black focus:outline-none focus:ring-2 focus:ring-slate-300 transition-all text-sm shadow-inner text-center"
+                          />
+                          <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 ml-1 text-center transition-colors group-focus-within:text-slate-600">Nome Trocado ou Convite para</span>
+                        </div>
+                        <div className="flex flex-col text-left">
+                          <input
+                            value={guestData.celular}
+                            disabled
+                            className="w-full bg-slate-100 border border-slate-200 text-slate-400 rounded-[1rem] px-5 py-4 font-black cursor-not-allowed opacity-60 text-sm text-center"
+                          />
+                          <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest mt-2 ml-1 text-center">Telemóvel (Bloqueado)</span>
+                        </div>
+                      </div>
+                    )}
                     <button
                       onClick={() => handleRSVP('Confirmado')}
                       disabled={statusRSVP === 'enviando'}
