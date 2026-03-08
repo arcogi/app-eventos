@@ -556,17 +556,14 @@ app.delete('/api/guests', async (req, res) => {
     }
 });
 
-// Rota de RSVP via Link Único (UUID)
+// Rota de RSVP via Link Único (UUID) — sempre aceita o último status
 app.post('/api/guests/:id/rsvp', async (req, res) => {
     const { id } = req.params;
     const { status, nome } = req.body;
     try {
-        // Verificar se já respondeu
         const existing = await pool.query('SELECT status FROM guests WHERE id = $1', [id]);
         if (existing.rows.length === 0) return res.status(404).json({ error: 'Convidado não encontrado.' });
-        if (existing.rows[0].status && existing.rows[0].status !== 'Pendente') {
-            return res.status(409).json({ error: 'Já confirmaste a tua presença!', status: existing.rows[0].status });
-        }
+        const statusAnterior = existing.rows[0].status;
 
         const result = await pool.query(`
       UPDATE guests 
@@ -575,9 +572,9 @@ app.post('/api/guests/:id/rsvp', async (req, res) => {
       RETURNING *
     `, [status, id, nome || null]);
 
-        // Log permanente
+        // Log permanente (com status anterior)
         await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
-            [id, 'RSVP', `Status: ${status}`]);
+            [id, 'RSVP', `${statusAnterior} → ${status}`]);
 
         res.json(result.rows[0]);
     } catch (err) {
