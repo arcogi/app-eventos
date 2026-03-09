@@ -1,21 +1,53 @@
 #!/bin/bash
+set -e
 
-echo "🚀 Iniciando Deploy ARCogi DaaS (Eventos) na Hostinger VPS"
-echo "🌐 Domínio: familia-rein.cloud | IP: 187.124.82.41"
+echo "🚀 Deploy ARCogi Eventos — familia-rein.cloud"
+echo "================================================"
 
-# Remover linha de comentário abaixo se a VPS estiver configurada com repositório Git
-# git pull origin main 
+# ── 1. Git: commit & push para produção ──────────────────────────────────────
+echo ""
+echo "📦 Commitando e enviando para GitHub (origin/main)..."
+git add -A
+git status --short
 
-echo "🛑 Derrubando contentores antigos..."
+# Pega mensagem de commit opcional como argumento, senão usa padrão
+MSG="${1:-deploy: atualização de produção $(date +'%Y-%m-%d %H:%M')}"
+git commit -m "$MSG" || echo "⚠️  Nada para commitar, continuando..."
+git push origin main
+
+echo "✅ Código atualizado no GitHub."
+
+# ── 2. Docker: rebuild & restart ─────────────────────────────────────────────
+echo ""
+echo "🛑 Derrubando containers antigos..."
 docker compose -f docker-compose.prod.yml down
 
-echo "🏗️ Construindo novas imagens Multi-stage (React + Node)..."
-docker compose -f docker-compose.prod.yml build
+echo "🏗️  Construindo novas imagens (React + Node multi-stage)..."
+docker compose -f docker-compose.prod.yml build --no-cache
 
-echo "🚀 Subindo ambiente integrado (Nginx + PostgreSQL + Node + Evolution API)..."
+echo "🚀 Subindo ambiente integrado (PostgreSQL + Node + Evolution API)..."
 docker compose -f docker-compose.prod.yml up -d
 
-echo "🔒 Verificando ficheiros e Volumes..."
+# ── 3. Limpeza ───────────────────────────────────────────────────────────────
+echo ""
+echo "🧹 Removendo imagens orphans..."
 docker image prune -f
 
-echo "✅ Tarefa concluída! Acede a http://familia-rein.cloud para visualizar."
+# ── 4. Health check ──────────────────────────────────────────────────────────
+echo ""
+echo "⏳ Aguardando servidor subir..."
+sleep 5
+
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/health | grep -q "200"; then
+  echo "✅ Servidor respondendo (200 OK)."
+else
+  echo "⚠️  Servidor não respondeu 200 — verifique os logs:"
+  echo "   docker logs app-node --tail 30"
+fi
+
+echo ""
+echo "================================================"
+echo "✅ Deploy concluído!"
+echo "🌐 https://familia-rein.cloud"
+echo "🔧 Admin: https://familia-rein.cloud/admin"
+echo "================================================"

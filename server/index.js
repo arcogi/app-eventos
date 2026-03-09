@@ -184,6 +184,41 @@ async function initDB() {
           );
         `);
 
+        // Tabela de contas remetentes (multi-account WhatsApp)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS sender_accounts (
+            id SERIAL PRIMARY KEY,
+            nome TEXT NOT NULL,
+            celular TEXT UNIQUE NOT NULL,
+            instance_name TEXT NOT NULL,
+            status TEXT DEFAULT 'disconnected',
+            daily_count INTEGER DEFAULT 0,
+            daily_limit INTEGER DEFAULT 35,
+            last_reset DATE DEFAULT CURRENT_DATE,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+        `);
+
+        // Migração: sender_name e prazo_resposta em guests
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS sender_name TEXT;`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS sender_artigo TEXT;`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS prazo_resposta DATE;`);
+
+        // Tabela de histórico de fases do evento (snapshot completo ao finalizar)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS event_phases_history (
+            id SERIAL PRIMARY KEY,
+            phase_name TEXT NOT NULL,
+            closed_at TIMESTAMP DEFAULT NOW(),
+            stats JSONB,
+            guests_snapshot JSONB,
+            notes TEXT
+          );
+        `);
+
+        // Migração: whatsapp_msg_template em event_configs
+        await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS whatsapp_msg_template TEXT DEFAULT '{{intro}}\n\nTemos um convite especial para você{{deps}}.\n\n🎬 Assista até o final e confirme sua presença:\n\n{{link}}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.';`);
+
         // Inserir linha padrão de config se estiver vazia
         const res = await client.query('SELECT COUNT(*) FROM event_configs');
         if (parseInt(res.rows[0].count) === 0) {
@@ -226,18 +261,19 @@ app.get('/api/config', async (req, res) => {
 app.post('/api/config', async (req, res) => {
     const { title, subtitle, video_file, btn_confirm_text, btn_doubt_text, btn_decline_text,
         msg_success_confirm, msg_success_doubt, msg_success_decline, footer_text,
-        event_name, honorees, slogan, event_date, confirmation_deadline } = req.body;
+        event_name, honorees, slogan, event_date, confirmation_deadline, whatsapp_msg_template } = req.body;
     try {
         await pool.query(`
       UPDATE event_configs SET 
         title=$1, subtitle=$2, video_file=$3, btn_confirm_text=$4, 
         btn_doubt_text=$5, btn_decline_text=$6, msg_success_confirm=$7, msg_success_doubt=$8,
         msg_success_decline=$9, footer_text=$10,
-        event_name=$11, honorees=$12, slogan=$13, event_date=$14, confirmation_deadline=$15
+        event_name=$11, honorees=$12, slogan=$13, event_date=$14, confirmation_deadline=$15,
+        whatsapp_msg_template=$16
       WHERE id=(SELECT id FROM event_configs LIMIT 1)
     `, [title, subtitle, video_file, btn_confirm_text, btn_doubt_text, btn_decline_text,
             msg_success_confirm, msg_success_doubt, msg_success_decline, footer_text,
-            event_name, honorees, slogan, event_date || null, confirmation_deadline || null]);
+            event_name, honorees, slogan, event_date || null, confirmation_deadline || null, whatsapp_msg_template || null]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -454,15 +490,18 @@ app.post('/api/guests/bulk', async (req, res) => {
                 const sexoValido = ['Masculino', 'Feminino'].includes(guest.sexo) ? guest.sexo : 'Masculino';
 
                 const queryRes = await client.query(`
-                    INSERT INTO guests (nome, apelido, celular, dependentes, idade, sexo, status, tipo_evento, short_code)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    INSERT INTO guests (nome, apelido, celular, dependentes, idade, sexo, status, tipo_evento, short_code, sender_name, sender_artigo, prazo_resposta)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     ON CONFLICT (celular) DO UPDATE 
                     SET 
                       dependentes = EXCLUDED.dependentes,
                       apelido = EXCLUDED.apelido,
                       nome = EXCLUDED.nome,
                       idade = EXCLUDED.idade,
-                      sexo = EXCLUDED.sexo
+                      sexo = EXCLUDED.sexo,
+                      sender_name = COALESCE(EXCLUDED.sender_name, guests.sender_name),
+                      sender_artigo = COALESCE(EXCLUDED.sender_artigo, guests.sender_artigo),
+                      prazo_resposta = COALESCE(EXCLUDED.prazo_resposta, guests.prazo_resposta)
                     RETURNING id, short_code
                 `, [
                     guest.nome,
@@ -473,7 +512,10 @@ app.post('/api/guests/bulk', async (req, res) => {
                     sexoValido,
                     'Pendente',
                     'Save the Date',
-                    generateShortCode()
+                    generateShortCode(),
+                    guest.envio || guest.sender_name || null,
+                    guest.artigo || guest.sender_artigo || null,
+                    guest.prazo_resposta || null
                 ]);
 
                 // Se RETURNING id retornou algo, a linha foi criada de facto
@@ -589,13 +631,18 @@ const WA_CLOUD_TOKEN = process.env.WA_CLOUD_TOKEN || '';
 const WA_CLOUD_PHONE_ID = process.env.WA_CLOUD_PHONE_ID || '';
 const WA_CLOUD_API_VERSION = process.env.WA_CLOUD_API_VERSION || 'v21.0';
 
-// Evolution API (fallback)
+// Evolution API (multi-account)
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'http://localhost:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'eventos_arcogi_global_123';
-const INSTANCE_NAME = 'EventosApp';
+const DEFAULT_INSTANCE = 'EventosApp';
 
 // Detecta qual API usar
 const useCloudAPI = () => !!(WA_CLOUD_TOKEN && WA_CLOUD_PHONE_ID);
+
+// Helper: resetar contadores diários das contas remetentes
+async function resetDailyCountsIfNeeded() {
+    await pool.query(`UPDATE sender_accounts SET daily_count = 0, last_reset = CURRENT_DATE WHERE last_reset < CURRENT_DATE`);
+}
 
 app.get('/api/whatsapp/status', async (req, res) => {
     if (useCloudAPI()) {
@@ -614,7 +661,7 @@ app.get('/api/whatsapp/status', async (req, res) => {
 
     // Fallback: Evolution API
     try {
-        const resp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${INSTANCE_NAME}`, {
+        const resp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${DEFAULT_INSTANCE}`, {
             headers: { 'apikey': EVOLUTION_API_KEY }
         });
         if (!resp.ok) return res.json({ status: 'DISCONNECTED', qrCode: '', mode: 'evolution' });
@@ -641,11 +688,11 @@ app.post('/api/whatsapp/connect', async (req, res) => {
         await fetch(`${EVOLUTION_URL}/instance/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
-            body: JSON.stringify({ instanceName: INSTANCE_NAME, qrcode: true, integration: 'WHATSAPP-BAILEYS' })
+            body: JSON.stringify({ instanceName: DEFAULT_INSTANCE, qrcode: true, integration: 'WHATSAPP-BAILEYS' })
         });
 
         for (let attempt = 0; attempt < 3; attempt++) {
-            const connectResp = await fetch(`${EVOLUTION_URL}/instance/connect/${INSTANCE_NAME}`, {
+            const connectResp = await fetch(`${EVOLUTION_URL}/instance/connect/${DEFAULT_INSTANCE}`, {
                 headers: { 'apikey': EVOLUTION_API_KEY }
             });
             const connectData = await connectResp.json();
@@ -674,7 +721,7 @@ app.post('/api/whatsapp/disconnect', async (req, res) => {
         return res.json({ status: 'DISCONNECTED', message: 'Cloud API não precisa de desconexão.' });
     }
     try {
-        await fetch(`${EVOLUTION_URL}/instance/logout/${INSTANCE_NAME}`, {
+        await fetch(`${EVOLUTION_URL}/instance/logout/${DEFAULT_INSTANCE}`, {
             method: 'DELETE', headers: { 'apikey': EVOLUTION_API_KEY }
         });
         res.json({ status: 'DISCONNECTED' });
@@ -722,7 +769,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
 
         } else {
             // --- Evolution API (fallback) ---
-            const stateResp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${INSTANCE_NAME}`, {
+            const stateResp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${DEFAULT_INSTANCE}`, {
                 headers: { 'apikey': EVOLUTION_API_KEY }
             });
             const stateData = await stateResp.json();
@@ -731,7 +778,7 @@ app.post('/api/whatsapp/send', async (req, res) => {
                 return res.status(403).json({ error: 'WhatsApp não conectado na Evolution API' });
             }
 
-            const sendResp = await fetch(`${EVOLUTION_URL}/message/sendText/${INSTANCE_NAME}`, {
+            const sendResp = await fetch(`${EVOLUTION_URL}/message/sendText/${DEFAULT_INSTANCE}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
                 body: JSON.stringify({
@@ -796,6 +843,433 @@ app.get('/c/:code', async (req, res) => {
 <meta http-equiv="refresh" content="0;url=${targetUrl}">
 <title>${title}</title>
 </head><body><script>window.location.replace("${targetUrl}")</script></body></html>`);
+});
+
+// --- Fallback do React Router (SPAs) DEPOIS das APIS ---
+
+// --- ROTAS DE CONTAS REMETENTES (Multi-Account) ---
+
+// Listar contas remetentes
+app.get('/api/sender-accounts', requireAuth, async (req, res) => {
+    try {
+        await resetDailyCountsIfNeeded();
+        const result = await pool.query('SELECT * FROM sender_accounts ORDER BY id ASC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Criar conta remetente
+app.post('/api/sender-accounts', requireAuth, async (req, res) => {
+    const { nome, celular } = req.body;
+    if (!nome || !celular) return res.status(400).json({ error: 'Nome e celular obrigatórios.' });
+    const celularLimpo = celular.replace(/\D/g, '');
+    const instanceName = `sender_${celularLimpo}`;
+    try {
+        const result = await pool.query(
+            `INSERT INTO sender_accounts (nome, celular, instance_name) VALUES ($1, $2, $3) RETURNING *`,
+            [nome, celularLimpo, instanceName]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        if (err.code === '23505') return res.status(400).json({ error: 'Celular já cadastrado.' });
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Excluir conta remetente
+app.delete('/api/sender-accounts/:id', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query('DELETE FROM sender_accounts WHERE id = $1 RETURNING *', [req.params.id]);
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
+        res.json({ success: true, deleted: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- MULTI-INSTANCE WhatsApp (Evolution API) ---
+
+// Conectar uma conta específica via QR Code
+app.post('/api/whatsapp/instance/:instanceName/connect', requireAuth, async (req, res) => {
+    const { instanceName } = req.params;
+    try {
+        // Criar instância
+        await fetch(`${EVOLUTION_URL}/instance/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+            body: JSON.stringify({ instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' })
+        });
+
+        // Tentar obter QR Code
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const connectResp = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, {
+                headers: { 'apikey': EVOLUTION_API_KEY }
+            });
+            const connectData = await connectResp.json();
+
+            if (connectData && (connectData.base64 || connectData.pairingCode)) {
+                return res.json({
+                    status: 'QR_CODE',
+                    qrCode: connectData.base64 || '',
+                    pairingCode: connectData.pairingCode || ''
+                });
+            }
+            if (connectData?.instance?.state === 'open') {
+                await pool.query(`UPDATE sender_accounts SET status='connected' WHERE instance_name=$1`, [instanceName]);
+                return res.json({ status: 'CONNECTED', qrCode: '' });
+            }
+            await new Promise(r => setTimeout(r, 2000));
+        }
+        res.json({ status: 'QR_CODE', qrCode: '' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Status de uma instância específica
+app.get('/api/whatsapp/instance/:instanceName/status', async (req, res) => {
+    const { instanceName } = req.params;
+    try {
+        const resp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${instanceName}`, {
+            headers: { 'apikey': EVOLUTION_API_KEY }
+        });
+        if (!resp.ok) {
+            await pool.query(`UPDATE sender_accounts SET status='disconnected' WHERE instance_name=$1`, [instanceName]);
+            return res.json({ status: 'DISCONNECTED' });
+        }
+        const data = await resp.json();
+        const state = data?.instance?.state || 'DISCONNECTED';
+
+        if (state === 'open') {
+            await pool.query(`UPDATE sender_accounts SET status='connected' WHERE instance_name=$1`, [instanceName]);
+            return res.json({ status: 'CONNECTED' });
+        }
+        await pool.query(`UPDATE sender_accounts SET status='disconnected' WHERE instance_name=$1`, [instanceName]);
+        res.json({ status: state === 'connecting' ? 'QR_CODE' : 'DISCONNECTED' });
+    } catch {
+        res.json({ status: 'DISCONNECTED' });
+    }
+});
+
+// Desconectar uma instância específica
+app.post('/api/whatsapp/instance/:instanceName/disconnect', requireAuth, async (req, res) => {
+    const { instanceName } = req.params;
+    try {
+        await fetch(`${EVOLUTION_URL}/instance/logout/${instanceName}`, {
+            method: 'DELETE', headers: { 'apikey': EVOLUTION_API_KEY }
+        });
+        await pool.query(`UPDATE sender_accounts SET status='disconnected' WHERE instance_name=$1`, [instanceName]);
+        res.json({ status: 'DISCONNECTED' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- ENVIO BATCH com Throttling Anti-Ban ---
+
+// Estado global do envio batch (em memória — SSE seria melhor para produção)
+let batchState = { running: false, total: 0, sent: 0, errors: 0, currentGuest: '', log: [] };
+
+app.get('/api/whatsapp/batch-status', requireAuth, (req, res) => {
+    res.json(batchState);
+});
+
+app.post('/api/whatsapp/batch-stop', requireAuth, (req, res) => {
+    batchState.running = false;
+    res.json({ success: true, message: 'Envio batch será interrompido.' });
+});
+
+app.post('/api/whatsapp/send-batch', requireAuth, async (req, res) => {
+    if (batchState.running) return res.status(409).json({ error: 'Envio batch já em andamento.' });
+
+    const { senderName } = req.body; // opcional: filtrar por remetente
+
+    try {
+        await resetDailyCountsIfNeeded();
+
+        // Pegar convidados pendentes (opcionalmente filtrados por sender)
+        let query = `SELECT g.*, sa.instance_name, sa.nome as sender_display_name, sa.daily_count, sa.daily_limit, sa.id as sender_id
+                     FROM guests g 
+                     LEFT JOIN sender_accounts sa ON sa.nome = g.sender_name
+                     WHERE g.status_envio = 'Pendente'`;
+        const params = [];
+        if (senderName) {
+            query += ` AND g.sender_name = $1`;
+            params.push(senderName);
+        }
+        query += ` ORDER BY g.nome ASC`;
+
+        const guests = (await pool.query(query, params)).rows;
+        if (guests.length === 0) return res.json({ success: true, message: 'Nenhum convidado pendente.' });
+
+        batchState = { running: true, total: guests.length, sent: 0, errors: 0, currentGuest: '', log: [] };
+        res.json({ success: true, message: `Iniciando envio para ${guests.length} convidado(s).`, total: guests.length });
+
+        // Processar envios em background
+        (async () => {
+            let sendCount = 0;
+            for (const guest of guests) {
+                if (!batchState.running) {
+                    batchState.log.push({ type: 'info', msg: 'Envio interrompido pelo operador.' });
+                    break;
+                }
+
+                const instanceName = guest.instance_name || DEFAULT_INSTANCE;
+
+                // Verificar limite diário
+                if (guest.sender_id && guest.daily_count >= guest.daily_limit) {
+                    batchState.log.push({ type: 'warn', msg: `${guest.sender_display_name}: limite diário atingido (${guest.daily_limit}). Pulando ${guest.nome}.` });
+                    batchState.errors++;
+                    continue;
+                }
+
+                // Verificar se instância está conectada
+                try {
+                    const stateResp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${instanceName}`, {
+                        headers: { 'apikey': EVOLUTION_API_KEY }
+                    });
+                    const stateData = await stateResp.json();
+                    if (stateData?.instance?.state !== 'open') {
+                        await pool.query(`UPDATE guests SET status_envio='Erro' WHERE id=$1`, [guest.id]);
+                        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                            [guest.id, 'ERRO_ENVIO', `Instância ${instanceName} não conectada`]);
+                        batchState.errors++;
+                        batchState.log.push({ type: 'error', msg: `${guest.nome}: instância ${instanceName} desconectada.` });
+                        continue;
+                    }
+                } catch {
+                    batchState.errors++;
+                    continue;
+                }
+
+                // Montar mensagem personalizada (Fixo conforme pedido)
+                const apelido = guest.apelido || guest.nome;
+                const textDep = guest.dependentes && guest.dependentes > 0 ? ` e leve seu(s) ${guest.dependentes} dependente(s)` : '';
+                const senderDisplay = guest.sender_display_name || guest.sender_name || '';
+                const artigo = guest.sender_artigo || 'o/a';
+                const senderIntro = senderDisplay
+                    ? `Olá *${apelido}*, aqui é ${artigo} ${senderDisplay}! 🎉`
+                    : `Olá *${apelido}*, aqui é Família Rein! 🎉`;
+
+                const baseUrl = process.env.PUBLIC_URL || 'https://familia-rein.cloud';
+                const link = `${baseUrl}/c/${guest.short_code}`;
+
+                const message = `${senderIntro}\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\n${link}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
+
+                const numberE164 = guest.celular.startsWith('55') ? guest.celular : `55${guest.celular}`;
+                batchState.currentGuest = guest.nome;
+
+                try {
+                    const sendResp = await fetch(`${EVOLUTION_URL}/message/sendText/${instanceName}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+                        body: JSON.stringify({
+                            number: numberE164,
+                            options: { delay: 1500, presence: 'composing' },
+                            textMessage: { text: message }
+                        })
+                    });
+
+                    if (sendResp.ok) {
+                        await pool.query(`UPDATE guests SET status_envio='Enviado', data_envio=NOW() WHERE id=$1`, [guest.id]);
+                        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                            [guest.id, 'ENVIO', `Enviado via ${instanceName} (${senderDisplay || 'default'})`]);
+                        if (guest.sender_id) {
+                            await pool.query(`UPDATE sender_accounts SET daily_count = daily_count + 1 WHERE id=$1`, [guest.sender_id]);
+                        }
+                        batchState.sent++;
+                        batchState.log.push({ type: 'ok', msg: `✅ ${guest.nome} — enviado via ${senderDisplay || instanceName}` });
+                    } else {
+                        const errData = await sendResp.json().catch(() => ({}));
+                        await pool.query(`UPDATE guests SET status_envio='Erro' WHERE id=$1`, [guest.id]);
+                        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                            [guest.id, 'ERRO_ENVIO', JSON.stringify(errData)]);
+                        batchState.errors++;
+                        batchState.log.push({ type: 'error', msg: `❌ ${guest.nome} — erro: ${errData?.message || 'desconhecido'}` });
+                    }
+                } catch (err) {
+                    await pool.query(`UPDATE guests SET status_envio='Erro' WHERE id=$1`, [guest.id]);
+                    batchState.errors++;
+                    batchState.log.push({ type: 'error', msg: `❌ ${guest.nome} — ${err.message}` });
+                }
+
+                sendCount++;
+
+                // Anti-ban: Pausa longa a cada 10 envios (3-5 min)
+                if (sendCount % 10 === 0 && batchState.running) {
+                    const pauseMs = 180000 + Math.floor(Math.random() * 120000); // 3-5 min
+                    batchState.log.push({ type: 'info', msg: `⏸️ Pausa de ${Math.round(pauseMs / 60000)} min (anti-ban)...` });
+                    await new Promise(r => setTimeout(r, pauseMs));
+                } else if (batchState.running) {
+                    // Anti-ban: Delay aleatório entre envios (25-45s)
+                    const delayMs = 25000 + Math.floor(Math.random() * 20000);
+                    await new Promise(r => setTimeout(r, delayMs));
+                }
+            }
+
+            batchState.running = false;
+            batchState.currentGuest = '';
+            batchState.log.push({ type: 'info', msg: `🏁 Envio finalizado: ${batchState.sent} enviados, ${batchState.errors} erros.` });
+        })();
+    } catch (err) {
+        batchState.running = false;
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Re-enviar somente os com erro ---
+app.post('/api/whatsapp/resend-errors', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`UPDATE guests SET status_envio='Pendente', data_envio=NULL WHERE status_envio='Erro'`);
+        res.json({ success: true, message: `${result.rowCount} convidado(s) com erro resetado(s) para re-envio.` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Reconciliação: stats de prazo × resposta ---
+app.get('/api/guests/reconciliation', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) FILTER (WHERE status = 'Confirmado') as confirmados,
+                COUNT(*) FILTER (WHERE status = 'Duvida') as duvida,
+                COUNT(*) FILTER (WHERE status = 'Recusado') as recusados,
+                COUNT(*) FILTER (WHERE status = 'Pendente') as sem_resposta,
+                COUNT(*) FILTER (WHERE status = 'Pendente' AND prazo_resposta IS NOT NULL AND prazo_resposta < CURRENT_DATE) as prazo_vencido,
+                COUNT(*) FILTER (WHERE status = 'Pendente' AND (prazo_resposta IS NULL OR prazo_resposta >= CURRENT_DATE)) as dentro_prazo,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'Confirmado' THEN 1 + COALESCE(dependentes, 0) ELSE 0 END) as total_presentes,
+                SUM(CASE WHEN status = 'Duvida' THEN 1 + COALESCE(dependentes, 0) ELSE 0 END) as total_duvida_presentes,
+                COUNT(*) FILTER (WHERE status_envio = 'Enviado') as enviados,
+                COUNT(*) FILTER (WHERE status_envio = 'Erro') as envio_erros,
+                COUNT(*) FILTER (WHERE status_envio = 'Pendente') as envio_pendente
+            FROM guests
+        `);
+
+        // Lista detalhada de prazo vencido
+        const vencidos = await pool.query(`
+            SELECT id, nome, celular, sender_name, prazo_resposta, status_envio, status
+            FROM guests 
+            WHERE status = 'Pendente' AND prazo_resposta IS NOT NULL AND prazo_resposta < CURRENT_DATE
+            ORDER BY prazo_resposta ASC
+        `);
+
+        res.json({
+            stats: result.rows[0],
+            vencidos: vencidos.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- FINALIZAÇÃO DE FASE E HISTÓRICO ---
+
+// Listar fases finalizadas (sem snapshot completo para performance)
+app.get('/api/event/phases', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT id, phase_name, closed_at, stats, notes 
+            FROM event_phases_history ORDER BY closed_at DESC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Detalhe de uma fase (com snapshot completo)
+app.get('/api/event/phases/:id', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT * FROM event_phases_history WHERE id = $1`, [req.params.id]);
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Fase não encontrada.' });
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Finalizar fase atual → arquiva snapshot e transiciona para próxima fase
+app.post('/api/event/finalize-phase', requireAuth, async (req, res) => {
+    const { notes } = req.body;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Detectar fase atual
+        const configRes = await client.query('SELECT * FROM event_configs LIMIT 1');
+        const config = configRes.rows[0] || {};
+
+        // Pegar tipo_evento mais usado nos guests como indicador da fase
+        const phaseRes = await client.query(`
+            SELECT tipo_evento, COUNT(*) as cnt FROM guests GROUP BY tipo_evento ORDER BY cnt DESC LIMIT 1
+        `);
+        const currentPhase = phaseRes.rows[0]?.tipo_evento || 'Save the Date';
+
+        // 2. Snapshot completo dos convidados
+        const guestsRes = await client.query(`
+            SELECT id, nome, apelido, celular, idade, sexo, dependentes, status, status_envio, 
+                   data_envio, data_resposta, sender_name, sender_artigo, prazo_resposta, short_code
+            FROM guests ORDER BY nome
+        `);
+
+        // 3. Calcular stats da fase
+        const guests = guestsRes.rows;
+        const stats = {
+            total: guests.length,
+            confirmados: guests.filter(g => g.status === 'Confirmado').length,
+            duvida: guests.filter(g => g.status === 'Duvida').length,
+            recusados: guests.filter(g => g.status === 'Recusado').length,
+            pendentes: guests.filter(g => g.status === 'Pendente').length,
+            enviados: guests.filter(g => g.status_envio === 'Enviado').length,
+            erros: guests.filter(g => g.status_envio === 'Erro').length,
+            total_presentes: guests.filter(g => g.status === 'Confirmado').reduce((s, g) => s + 1 + (g.dependentes || 0), 0),
+            total_duvida_presentes: guests.filter(g => g.status === 'Duvida').reduce((s, g) => s + 1 + (g.dependentes || 0), 0),
+        };
+
+        // 4. Gravar snapshot
+        await client.query(`
+            INSERT INTO event_phases_history (phase_name, stats, guests_snapshot, notes)
+            VALUES ($1, $2, $3, $4)
+        `, [currentPhase, JSON.stringify(stats), JSON.stringify(guests), notes || null]);
+
+        // 5. Transicionar para próxima fase
+        const nextPhase = currentPhase === 'Save the Date' ? 'Convite' : currentPhase;
+
+        if (currentPhase !== nextPhase) {
+            // Muda tipo_evento para Convite
+            await client.query(`UPDATE guests SET tipo_evento = $1`, [nextPhase]);
+            // Reseta envios (novos convites precisam ser enviados) mas preserva RSVP
+            await client.query(`UPDATE guests SET status_envio = 'Pendente', data_envio = NULL`);
+        }
+
+        // 6. Registrar no histórico
+        for (const g of guests) {
+            await client.query(
+                `INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+                [g.id, 'FASE_FINALIZADA', `Fase "${currentPhase}" finalizada. Status: ${g.status}, Envio: ${g.status_envio}`]
+            );
+        }
+
+        await client.query('COMMIT');
+
+        res.json({
+            success: true,
+            message: `Fase "${currentPhase}" finalizada e arquivada. ${currentPhase !== nextPhase ? `Transição para "${nextPhase}" realizada. Envios resetados.` : 'Fase encerrada.'}`,
+            stats,
+            previousPhase: currentPhase,
+            nextPhase
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
 });
 
 // --- Fallback do React Router (SPAs) DEPOIS das APIS ---

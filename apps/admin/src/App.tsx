@@ -27,6 +27,7 @@ interface EventConfig {
   slogan?: string;
   event_date?: string;
   confirmation_deadline?: string;
+  whatsapp_msg_template?: string;
 }
 
 interface Guest {
@@ -42,6 +43,9 @@ interface Guest {
   data_resposta?: string;
   data_envio?: string;
   short_code?: string;
+  sender_name?: string;
+  sender_artigo?: string;
+  prazo_resposta?: string;
 }
 
 // ── Simulador de iPhone ─────────────────────────────────────────────────────
@@ -208,6 +212,9 @@ function GuestRow({ guest, onSendWhatsApp, onDelete, onRefresh }: { guest: Guest
               <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1 mt-1">
                 <Phone size={9} className="text-emerald-500" /> {guest.celular}
                 <span className="ml-1 px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-md">DEPS: {guest.dependentes || 0}</span>
+                {guest.sender_name && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-indigo-100 text-indigo-600 rounded-md">📤 {guest.sender_name}</span>
+                )}
               </div>
             </div>
           </div>
@@ -289,7 +296,9 @@ function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClo
       const apelido = g.apelido || g.nome;
       const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
       const linkCode = g.short_code || g.id;
-      const msg = `Olá *${apelido}*, aqui é Família Rein! 🎉\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
+      const senderArtigo = g.sender_artigo || 'o/a';
+      const senderIntro = g.sender_name ? `Olá *${apelido}*, aqui é ${senderArtigo} ${g.sender_name}! 🎉` : `Olá *${apelido}*, aqui é Família Rein! 🎉`;
+      const msg = `${senderIntro}\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
 
       try {
         await fetch(`${API}/api/whatsapp/send`, {
@@ -383,6 +392,91 @@ function DisparoOverlay({ guests, onClose, onRefresh }: { guests: Guest[]; onClo
   );
 }
 
+// ── Histórico de Fases ──────────────────────────────────────────────────────
+function PhaseHistory() {
+  const [phases, setPhases] = useState<any[]>([]);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch(`${API}/api/event/phases`, { headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } })
+      .then(r => r.json())
+      .then(data => Array.isArray(data) ? setPhases(data) : setPhases([]))
+      .catch(() => { });
+  }, []);
+
+  if (phases.length === 0) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-[2rem] p-8 shadow-sm">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 bg-amber-200 rounded-xl flex items-center justify-center text-amber-700 font-black text-lg">📋</div>
+        <div>
+          <h3 className="font-black text-xl uppercase tracking-tighter text-slate-900">Histórico de Fases</h3>
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{phases.length} fase(s) arquivada(s)</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {phases.map(p => {
+          const s = p.stats || {};
+          const isOpen = expanded === p.id;
+          return (
+            <div key={p.id} className="bg-white rounded-2xl border border-amber-100 overflow-hidden">
+              <button onClick={() => setExpanded(isOpen ? null : p.id)} className="w-full p-5 flex items-center justify-between text-left hover:bg-amber-50/50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="bg-amber-500 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest">{p.phase_name}</span>
+                  <span className="text-xs text-slate-500 font-bold">{new Date(p.closed_at).toLocaleDateString('pt-BR')} {new Date(p.closed_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-emerald-600">✅{s.confirmados || 0}</span>
+                  <span className="text-[10px] font-black text-amber-600">🤔{s.duvida || 0}</span>
+                  <span className="text-[10px] font-black text-rose-500">❌{s.recusados || 0}</span>
+                  <span className="text-[10px] font-black text-slate-400">⏳{s.pendentes || 0}</span>
+                  <span className="text-slate-300 text-xs">{isOpen ? '▲' : '▼'}</span>
+                </div>
+              </button>
+              {isOpen && (
+                <div className="px-5 pb-5 border-t border-amber-100 pt-4 space-y-3 animate-in fade-in">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                      <div className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Confirmados</div>
+                      <div className="text-2xl font-black text-emerald-700">{s.confirmados || 0}</div>
+                      <div className="text-[8px] text-emerald-500 font-bold">+deps: {s.total_presentes || 0}</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-3 text-center">
+                      <div className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Dúvida</div>
+                      <div className="text-2xl font-black text-blue-700">{s.duvida || 0}</div>
+                      <div className="text-[8px] text-blue-500 font-bold">+deps: {s.total_duvida_presentes || 0}</div>
+                    </div>
+                    <div className="bg-rose-50 rounded-xl p-3 text-center">
+                      <div className="text-[9px] font-black text-rose-600 uppercase tracking-widest">Recusados</div>
+                      <div className="text-2xl font-black text-rose-700">{s.recusados || 0}</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-3 text-center">
+                      <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sem Resposta</div>
+                      <div className="text-2xl font-black text-slate-600">{s.pendentes || 0}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
+                    <span>📤 Enviados: {s.enviados || 0}</span>
+                    <span>🔴 Erros: {s.erros || 0}</span>
+                    <span>👥 Total: {s.total || 0}</span>
+                  </div>
+                  {p.notes && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium italic">
+                      📝 {p.notes}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── App Principal ─────────────────────────────────────────────────────────────
 export default function App() {
   const [aba, setAba] = useState<'dashboard' | 'convidados' | 'configuracoes'>('dashboard');
@@ -396,6 +490,7 @@ export default function App() {
   const [filtroEnvio, setFiltroEnvio] = useState<string[]>([]);
   const [filtroSexo, setFiltroSexo] = useState<string[]>([]);
   const [filtroIdade, setFiltroIdade] = useState<string[]>([]);
+  const [filtroSender, setFiltroSender] = useState<string[]>([]);
   const [showSim, setShowSim] = useState(false);
   const [showDisparo, setShowDisparo] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
@@ -523,10 +618,17 @@ export default function App() {
       const matchEnvio = filtroEnvio.length === 0 || filtroEnvio.includes(g.status_envio || 'Pendente');
       const matchSexo = filtroSexo.length === 0 || filtroSexo.includes(g.sexo || 'Masculino');
       const matchIdade = filtroIdade.length === 0 || filtroIdade.includes(g.idade || 'Adulto');
-      return matchBusca && matchStatus && matchEnvio && matchSexo && matchIdade;
+      const matchSender = filtroSender.length === 0 || filtroSender.includes(g.sender_name || '');
+      return matchBusca && matchStatus && matchEnvio && matchSexo && matchIdade && matchSender;
     }),
-    [guests, busca, filtroStatus, filtroEnvio, filtroSexo, filtroIdade]
+    [guests, busca, filtroStatus, filtroEnvio, filtroSexo, filtroIdade, filtroSender]
   );
+
+  // Nomes únicos de remetentes (para o filtro)
+  const uniqueSenders = useMemo(() => {
+    const senders = new Set(guests.map(g => g.sender_name).filter(Boolean) as string[]);
+    return Array.from(senders).sort();
+  }, [guests]);
 
   const getCount = (filteredGuests: Guest[]) => filteredGuests.reduce((sum, g) => sum + 1 + Number(g.dependentes || 0), 0);
 
@@ -633,7 +735,9 @@ export default function App() {
     const apelido = g.apelido || g.nome;
     const textDep = g.dependentes && g.dependentes > 0 ? ` e leve seu(s) ${g.dependentes} dependente(s)` : '';
     const linkCode = g.short_code || g.id;
-    const msg = `Olá *${apelido}*, aqui é Família Rein! 🎉\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
+    const senderArtigo = g.sender_artigo || 'o/a';
+    const senderIntro = g.sender_name ? `Olá *${apelido}*, aqui é ${senderArtigo} ${g.sender_name}! 🎉` : `Olá *${apelido}*, aqui é Família Rein! 🎉`;
+    const msg = `${senderIntro}\n\nTemos um convite especial para você${textDep}.\n\n🎬 Assista até o final e confirme sua presença:\n\nhttps://familia-rein.cloud/c/${linkCode}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.`;
 
     // Automação via API Evolution Substituindo o Popup:
     try {
@@ -643,7 +747,7 @@ export default function App() {
       });
       fetchData();
     } catch { }
-  }, [fetchData]);
+  }, [fetchData, config]);
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -723,7 +827,10 @@ export default function App() {
           celular: String(row.whatsapp || row.celular || '').trim(),
           idade: normalizaIdade(row.idade),
           sexo: normalizaSexo(row.sexo),
-          dependentes: parseInt(String(row.dependente || row.dependentes || row.acompanhantes || row.depedentes || '0')) || 0
+          dependentes: parseInt(String(row.dependente || row.dependentes || row.acompanhantes || row.depedentes || '0')) || 0,
+          envio: row.contato ? String(row.contato).trim() : (row.envio ? String(row.envio).trim() : null),
+          artigo: row.artigo ? String(row.artigo).trim().toLowerCase() : null,
+          prazo_resposta: row.prazo_resposta || row.prazo || row.deadline || null,
         })).filter(g => g.celular); // Ignora linhas sem celular
 
         if (guestsArr.length === 0) {
@@ -852,15 +959,15 @@ export default function App() {
       {showDisparo && <DisparoOverlay guests={guests} onClose={() => setShowDisparo(false)} onRefresh={fetchData} />}
 
       {/* ── SIDEBAR ─────────────────────────────────────── */}
-      <aside className="w-[300px] bg-slate-900 text-white flex flex-col shrink-0">
-        <div className="p-8 border-b border-slate-800">
+      <aside className="w-[300px] bg-slate-900 text-white flex flex-col shrink-0 overflow-y-auto">
+        <div className="p-8 border-b border-slate-800 shrink-0">
           <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2 uppercase">
             <Heart size={24} className="text-rose-500 fill-rose-500" /> EVENTOS
           </h1>
           <p className="text-slate-500 text-[10px] uppercase font-black mt-2 tracking-widest">CRM de Elite</p>
         </div>
 
-        <nav className="flex-1 p-5 space-y-2 mt-4">
+        <nav className="p-5 space-y-2 shrink-0">
           <button
             onClick={() => setAba('dashboard')}
             className={`w-full flex items-center gap-3 px-5 py-4 rounded-2xl transition-all duration-300 ${aba === 'dashboard' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
@@ -882,11 +989,11 @@ export default function App() {
             onClick={() => setAba('configuracoes')}
             className={`w-full flex items-center gap-3 px-5 py-4 rounded-2xl transition-all duration-300 ${aba === 'configuracoes' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
-            <Settings size={18} /> <span className="font-black text-xs uppercase tracking-widest">Narrativa</span>
+            <Settings size={18} /> <span className="font-black text-xs uppercase tracking-widest">Narrativa & Config</span>
           </button>
         </nav>
 
-        <div className="p-6 border-t border-slate-800 space-y-4">
+        <div className="p-6 border-t border-slate-800 space-y-3 mt-auto shrink-0">
           <button
             onClick={() => setShowDisparo(true)}
             disabled={disparoPendentesCount === 0 && failedGuests.length === 0}
@@ -894,52 +1001,73 @@ export default function App() {
           >
             <Zap size={16} /> Disparar Convites
           </button>
+
           <button
             onClick={async () => {
-              if (!confirm('🔄 Resetar apenas os envios com ERRO para Pendente?\nOs enviados com sucesso não serão afetados.')) return;
-              const res = await fetch(`${API}/api/guests/reset-envios`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
-              else alert('❌ Erro ao resetar envios.');
-            }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
-          >
-            🔄 Reenviar Erros
-          </button>
-          <button
-            onClick={async () => {
-              if (!confirm('⚠️ Resetar TODOS os envios?\nEnviados e Erros voltam para Pendente.\nRespostas RSVP não são afetadas.')) return;
-              const res = await fetch(`${API}/api/guests/reset-envios-todos`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              const statsRes = await fetch(`${API}/api/guests/reconciliation`, { headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              const statsData = await statsRes.json();
+              const s = statsData.stats;
+              const msg = `🏁 FINALIZAR FASE ATUAL?\n\n📊 Reconciliação:\n✅ Confirmados: ${s.confirmados}\n🤔 Dúvida: ${s.duvida}\n❌ Recusados: ${s.recusados}\n⏳ Sem resposta: ${s.sem_resposta}\n\nIsso arquiva tudo no histórico e transiciona (Save the Date → Convite). Envio é resetado para nova fase. Tem certeza?`;
+              if (!confirm(msg)) return;
+              const notes = prompt('Observações sobre esta fase (opcional):') || '';
+              const res = await fetch(`${API}/api/event/finalize-phase`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
+                body: JSON.stringify({ notes })
+              });
               const data = await res.json();
               if (res.ok) { alert(`✅ ${data.message}`); fetchData(); }
-              else alert('❌ Erro ao resetar envios.');
+              else alert(`❌ ${data.error || 'Erro ao finalizar fase.'}`);
             }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-amber-900/50 text-slate-500 hover:text-amber-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg"
           >
-            🔁 Reset Todos Envios
+            🏁 Finalizar Fase
           </button>
+
+          <div className="bg-slate-800/50 rounded-xl p-3 space-y-2 border border-slate-700">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block text-center mb-2">Ações de Manutenção</span>
+            <button
+              onClick={async () => {
+                if (!confirm('🔄 Resetar apenas os envios com ERRO para Pendente?')) return;
+                const res = await fetch(`${API}/api/guests/reset-envios`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
+            >
+              🔄 Reenviar Somente Erros
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('⚠️ Resetar TODOS os envios para Pendente?')) return;
+                const res = await fetch(`${API}/api/guests/reset-envios-todos`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-amber-900/50 text-slate-500 hover:text-amber-400 rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
+            >
+              🔁 Reset Todos Envios
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('⏪ Desfazer o último reset? (Retrocede envios)')) return;
+                const res = await fetch(`${API}/api/guests/rollback`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-900/30 hover:bg-indigo-800/50 text-indigo-400 rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
+            >
+              ⏪ Desfazer Reset
+            </button>
+          </div>
+
           <button
             onClick={async () => {
-              if (!confirm('⚠️ RESET TOTAL da campanha?\nLimpa: RSVP + data_resposta + envio + data_envio\nTodos os convidados voltam a "Pendente".')) return;
-              if (!confirm('🔴 Tem certeza? Isso apaga TODAS as respostas e envios.')) return;
-              const res = await fetch(`${API}/api/guests/reset-respostas`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              if (res.ok) { alert('✅ Campanha resetada! (RSVP + envios + todas as datas)'); fetchData(); }
-              else alert('❌ Erro ao resetar respostas.');
+              if (!confirm('🔴 APAGAR TODA A BASE ATUAL?\nTodos os convidados atuais serão excluídos (o histórico de fases se mantém). Use isso para carregar uma planliha 100% nova para outro evento.')) return;
+              const res = await fetch(`${API}/api/guests`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+              if (res.ok) { alert('✅ Base zerada com sucesso!'); fetchData(); }
+              else alert('❌ Erro ao zerar base.');
             }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-rose-900/50 text-slate-500 hover:text-rose-400 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-rose-600 text-rose-500 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all mt-4 border border-rose-900"
           >
-            🗑️ Reset Respostas
-          </button>
-          <button
-            onClick={async () => {
-              if (!confirm('⏪ Desfazer o último reset?\nIsso restaura o estado anterior dos convidados.')) return;
-              const res = await fetch(`${API}/api/guests/rollback`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              const data = await res.json();
-              if (res.ok) { alert(`✅ ${data.message}`); fetchData(); }
-              else alert(`❌ ${data.error || 'Erro no rollback.'}`);
-            }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-900/30 hover:bg-emerald-800/50 text-emerald-400 hover:text-emerald-300 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border border-emerald-800/30"
-          >
-            ⏪ Desfazer Reset
+            🗑️ Limpar Base Inteira
           </button>
         </div>
       </aside>
@@ -1020,6 +1148,9 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Histórico de Fases */}
+            <PhaseHistory />
 
             {/* DEBUG APENAS: Para o user conseguir testar o alerta de erro sem disparar whatsapp */}
             <div className="pt-20 opacity-30">
@@ -1133,6 +1264,31 @@ export default function App() {
                     <button onClick={() => setFiltroEnvio([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
                   )}
                 </div>
+                {/* Chips de filtro Contato (Remetente) */}
+                {uniqueSenders.length > 0 && (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">CONTATO:</span>
+                    {uniqueSenders.map(sender => {
+                      const active = filtroSender.includes(sender);
+                      const toggle = () => setFiltroSender(prev => active ? prev.filter(s => s !== sender) : [...prev, sender]);
+                      const senderCount = guests.filter(g => g.sender_name === sender).length;
+                      const senderPendente = guests.filter(g => g.sender_name === sender && (g.status_envio || 'Pendente') === 'Pendente').length;
+                      return (
+                        <button key={sender} onClick={toggle}
+                          className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                            ? 'bg-indigo-500 border-indigo-500 text-white'
+                            : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300'
+                            }`}
+                        >
+                          👤 {sender} <span className="opacity-60">({senderPendente}/{senderCount})</span>
+                        </button>
+                      );
+                    })}
+                    {filtroSender.length > 0 && (
+                      <button onClick={() => setFiltroSender([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                    )}
+                  </div>
+                )}
                 {/* Chips de filtro Sexo */}
                 <div className="flex flex-wrap gap-2 items-center">
                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">SEXO:</span>
@@ -1320,6 +1476,7 @@ export default function App() {
     </div>
   );
 }
+
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function Stat({ label, value, color, alert }: { label: string; value: number | string; color: string; alert?: boolean }) {

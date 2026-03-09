@@ -1,0 +1,7 @@
+
+> app-eventos-monorepo@1.0.0 dev:server
+> node server/index.js
+
+🚀 Servidor rodando no IP: http://0.0.0.0:3001
+✅ Banco de Dados Inicializado (PostgreSQL)
+Terminated
