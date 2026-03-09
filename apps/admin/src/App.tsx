@@ -651,6 +651,14 @@ export default function App() {
   // 🎯 Total real esperado na festa (Confirmados + Dúvida, com dependentes)
   const presencasEsperadas = useMemo(() => getCount(guests.filter(g => g.status === 'Confirmado' || g.status === 'Duvida')), [guests]);
 
+  // 📊 Breakdowns de presença esperada
+  const confirmadosEDuvida = useMemo(() => guests.filter(g => g.status === 'Confirmado' || g.status === 'Duvida'), [guests]);
+  const adultosCont = useMemo(() => getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto')), [confirmadosEDuvida]);
+  const adolescentesCont = useMemo(() => getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente')), [confirmadosEDuvida]);
+  const menoresCont = useMemo(() => getCount(confirmadosEDuvida.filter(g => g.idade === 'Menor')), [confirmadosEDuvida]);
+  const masculinoCont = useMemo(() => getCount(confirmadosEDuvida.filter(g => g.sexo === 'Masculino')), [confirmadosEDuvida]);
+  const femininoCont = useMemo(() => getCount(confirmadosEDuvida.filter(g => g.sexo === 'Feminino')), [confirmadosEDuvida]);
+
   const disparoPendentesCount = useMemo(() => guests.filter(g => (g.status_envio || 'Pendente') === 'Pendente').length, [guests]);
   const failedGuests = useMemo(() => guests.filter(g => g.status_envio === 'Erro'), [guests]);
 
@@ -1108,6 +1116,73 @@ export default function App() {
                 <p className="text-[9px] text-slate-500 font-bold mt-1">Confirmados + Dúvida (convidados + dependentes)</p>
               </div>
               <span className="text-6xl font-black text-emerald-600 tracking-tighter">{presencasEsperadas}</span>
+            </div>
+
+            {/* 📊 Breakdowns: Faixa Etária e Gênero */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Adultos x Adolescentes */}
+              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                <span className="text-[10px] uppercase font-black text-indigo-500 tracking-widest">🎂 Faixa Etária Esperada</span>
+                <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Confirmados + Dúvida (com dependentes)</p>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Adultos</span>
+                    <span className="text-2xl font-black text-indigo-600">{adultosCont}</span>
+                  </div>
+                  <div className="h-px bg-slate-100" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Adolescentes</span>
+                    <span className="text-2xl font-black text-violet-500">{adolescentesCont}</span>
+                  </div>
+                  <div className="h-px bg-slate-100" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Menores</span>
+                    <span className="text-2xl font-black text-sky-500">{menoresCont}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Masculino x Feminino */}
+              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                <span className="text-[10px] uppercase font-black text-rose-500 tracking-widest">⚧ Gênero Esperado</span>
+                <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Confirmados + Dúvida (com dependentes)</p>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Feminino</span>
+                    <span className="text-2xl font-black text-rose-500">{femininoCont}</span>
+                  </div>
+                  <div className="h-px bg-slate-100" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Masculino</span>
+                    <span className="text-2xl font-black text-blue-500">{masculinoCont}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumo visual de presença */}
+              <div className="bg-gradient-to-br from-emerald-50 to-indigo-50 border-2 border-emerald-200 rounded-[2rem] p-6">
+                <span className="text-[10px] uppercase font-black text-emerald-600 tracking-widest">🎯 Composição da Festa</span>
+                <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Previsão total por perfil</p>
+                <div className="space-y-2">
+                  {[
+                    { label: '👩‍🦰 Adultos Fem.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto' && g.sexo === 'Feminino')), color: 'text-rose-500' },
+                    { label: '👨 Adultos Masc.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto' && g.sexo === 'Masculino')), color: 'text-blue-500' },
+                    { label: '👧 Adol. Fem.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente' && g.sexo === 'Feminino')), color: 'text-violet-500' },
+                    { label: '👦 Adol. Masc.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente' && g.sexo === 'Masculino')), color: 'text-sky-500' },
+                    { label: '🧒 Menores', value: menoresCont, color: 'text-amber-500' },
+                  ].map(({ label, value, color }) => (
+                    <div key={label} className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-600">{label}</span>
+                      <span className={`text-lg font-black ${color}`}>{value}</span>
+                    </div>
+                  ))}
+                  <div className="h-px bg-emerald-200 mt-1" />
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[10px] font-black text-emerald-700 uppercase">Total</span>
+                    <span className="text-2xl font-black text-emerald-700">{presencasEsperadas}</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* CRM Analytics */}
