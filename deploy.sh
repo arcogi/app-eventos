@@ -4,8 +4,8 @@ set -e
 echo "🚀 Deploy ARCogi Eventos — familia-rein.cloud"
 echo "================================================"
 
-# Detectar se estamos na VPS (caminho /opt/app-eventos) ou no ambiente local
-if [ -d "/opt/app-eventos" ] && [ "$(pwd)" = "/opt/app-eventos" ]; then
+# Detectar ambiente: VPS se estiver dentro de /opt/, senão é local
+if [[ "$(pwd)" == /opt/* ]]; then
   # ── VPS: rebuild Docker ──────────────────────────────────────────────────
   echo "📍 Ambiente: VPS Hostinger"
   echo ""
@@ -42,7 +42,7 @@ else
   echo "✅ Código enviado para GitHub."
   echo ""
   echo "📋 Agora na Hostinger VPS, execute:"
-  echo "   cd /opt/app-eventos"
+  echo "   cd /opt/app-eventos/docker-compose.prod.yml"
   echo "   git pull origin main"
   echo "   ./deploy.sh"
 fi
