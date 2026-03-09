@@ -15,8 +15,8 @@ services:
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha_dev_123}
-      POSTGRES_DB: ${POSTGRES_DB:-eventos_db}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: ${POSTGRES_DB:-eventos}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
@@ -34,7 +34,7 @@ services:
       - AUTHENTICATION_API_KEY=eventos_arcogi_global_123
       - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-senha_dev_123}@eventos-db:5432/${POSTGRES_DB:-eventos_db}
+      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@eventos-db:5432/${POSTGRES_DB:-eventos}
       - CACHE_PROVIDER=memory
       - CACHE_REDIS_ENABLED=false
       - REDIS_GLOBAL_CLIENT=false
@@ -60,10 +60,10 @@ services:
     environment:
       - PORT=3001
       - DB_USER=${POSTGRES_USER:-admin}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-senha_dev_123}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-admin123}
       - DB_HOST=eventos-db
       - DB_PORT=5432
-      - DB_NAME=${POSTGRES_DB:-eventos_db}
+      - DB_NAME=${POSTGRES_DB:-eventos}
       - JWT_SECRET=${JWT_SECRET:-chave_super_secreta_jwt}
       - EVOLUTION_URL=http://evolution-api:8080
       - EVOLUTION_API_KEY=eventos_arcogi_global_123
