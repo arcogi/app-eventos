@@ -601,13 +601,22 @@ export default function App() {
     }
   }, [notify]);
 
+  // Refresh somente convidados (não sobrescreve config enquanto edita)
+  const refreshGuests = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/guests`);
+      const raw = await res.json();
+      setGuests(Array.isArray(raw) ? raw : []);
+    } catch { /* silencioso no polling */ }
+  }, []);
+
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Auto-refresh a cada 15s para captar RSVPs em tempo real
+  // Auto-refresh a cada 15s — atualiza apenas lista de convidados
   useEffect(() => {
-    const interval = setInterval(fetchData, 15000);
+    const interval = setInterval(refreshGuests, 15000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [refreshGuests]);
 
   const guestsFiltrados = useMemo(
     () => guests.filter(g => {
