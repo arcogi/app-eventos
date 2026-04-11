@@ -27,7 +27,7 @@ services:
     container_name: evolution-api
     restart: always
     environment:
-      - SERVER_URL=${SERVER_URL:-http://evolution-api:8080}
+      - SERVER_URL=${PUBLIC_VPS_URL:-http://evolution-api:8080}
       - CORS_ORIGIN=*
       - CORS_METHODS=POST,GET,PUT,DELETE
       - CORS_CREDENTIALS=true

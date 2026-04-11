@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import * as XLSX from 'xlsx';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -6,8 +6,12 @@ import {
   Send, Phone, User as UserIcon, Heart, AlertCircle,
   Eye, X, Search, Edit3, RotateCcw, Zap, MessageCircle,
   QrCode, RefreshCw, RefreshCcw, Video, AlertTriangle,
-  LayoutDashboard, Check, Trash2
+  LayoutDashboard, Check, Trash2, CalendarDays, Ticket, ScanLine
 } from 'lucide-react';
+
+// Módulos novos (lazy para não impactar bundle inicial)
+const ModuloConvite = lazy(() => import('./modules/Convite/index'));
+const ModuloCheckin = lazy(() => import('./modules/Checkin/index'));
 
 const API = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
@@ -478,7 +482,12 @@ function PhaseHistory() {
 }
 
 // ── App Principal ─────────────────────────────────────────────────────────────
+// Módulos disponíveis: 'std_dashboard' | 'std_convidados' | 'std_config' | 'convite' | 'checkin'
+type Modulo = 'std_dashboard' | 'std_convidados' | 'std_config' | 'convite' | 'checkin';
+
 export default function App() {
+  const [modulo, setModulo] = useState<Modulo>('std_dashboard');
+  // Compatístico com tabs interno do STD
   const [aba, setAba] = useState<'dashboard' | 'convidados' | 'configuracoes'>('dashboard');
   const [config, setConfig] = useState<EventConfig | null>(null);
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -499,6 +508,10 @@ export default function App() {
 
   // Auth
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('admin_token'));
+  const [userRole, setUserRole] = useState<'admin' | 'scan'>(
+    () => (localStorage.getItem('admin_role') as 'admin' | 'scan') || 'admin'
+  );
+  const [userNome, setUserNome] = useState(() => localStorage.getItem('admin_nome') || 'Admin');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -518,7 +531,15 @@ export default function App() {
       const data = await res.json();
       if (res.ok && data.token) {
         localStorage.setItem('admin_token', data.token);
+        localStorage.setItem('admin_role', data.role || 'admin');
+        localStorage.setItem('admin_nome', data.nome || 'Admin');
+        setUserRole(data.role || 'admin');
+        setUserNome(data.nome || 'Admin');
         setIsAuthenticated(true);
+        // Utilizador scan vai directamente para o check-in
+        if (data.role === 'scan') {
+          setModulo('checkin');
+        }
       } else {
         setLoginError(data.error || 'Credenciais inválidas.');
       }
@@ -527,6 +548,16 @@ export default function App() {
     } finally {
       setLoginLoading(false);
     }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_role');
+    localStorage.removeItem('admin_nome');
+    setIsAuthenticated(false);
+    setUserRole('admin');
+    setUserNome('Admin');
+    setModulo('std_dashboard');
   };
 
   // WPP Sync state
@@ -576,8 +607,10 @@ export default function App() {
 
   // Form State
   const [novoGuest, setNovoGuest] = useState({
-    nome: '', apelido: '', celular: '', idade: 'Adulto', sexo: 'Masculino', dependentes: 0,
+    nome: '', apelido: '', celular: '', idade: '', sexo: '',
+    dependentes: 0, sender_name: '', artigo: 'o'
   });
+  const [showNovoGuest, setShowNovoGuest] = useState(false);
 
   const notify = useCallback((msg: string, tipo: 'sucesso' | 'erro' = 'sucesso') => {
     setToast({ msg, tipo });
@@ -702,13 +735,22 @@ export default function App() {
     e.preventDefault();
     try {
       const res = await fetch(`${API}/api/guests`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...novoGuest, apelido: novoGuest.apelido || novoGuest.nome }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
+        body: JSON.stringify({
+          ...novoGuest,
+          apelido: novoGuest.apelido || novoGuest.nome,
+          dependentes: Number(novoGuest.dependentes) || 0,
+          idade: novoGuest.idade ? Number(novoGuest.idade) : null,
+          sender_name: novoGuest.sender_name || null,
+          artigo: novoGuest.artigo || null,
+        }),
       });
       if (res.ok) {
         notify('VIP cadastrado!');
         fetchData();
-        setNovoGuest({ nome: '', apelido: '', celular: '', idade: 'Adulto', sexo: 'Masculino', dependentes: 0 });
+        setNovoGuest({ nome: '', apelido: '', celular: '', idade: '', sexo: '', dependentes: 0, sender_name: '', artigo: 'o' });
+        setShowNovoGuest(false);
       } else {
         const err = await res.json();
         notify(err.error || 'Erro ao cadastrar.', 'erro');
@@ -981,580 +1023,727 @@ export default function App() {
           <h1 className="text-2xl font-black tracking-tighter flex items-center gap-2 uppercase">
             <Heart size={24} className="text-rose-500 fill-rose-500" /> EVENTOS
           </h1>
-          <p className="text-slate-500 text-[10px] uppercase font-black mt-2 tracking-widest">CRM de Elite</p>
+          <p className="text-slate-500 text-[10px] uppercase font-black mt-1 tracking-widest">
+            {userRole === 'scan' ? '🎤 Operador Check-in' : 'CRM de Elite'}
+          </p>
+          {userRole === 'scan' && (
+            <div className="mt-3 flex items-center gap-2 bg-emerald-500/20 rounded-xl px-3 py-2">
+              <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+              <span className="text-emerald-400 text-[10px] font-black uppercase tracking-widest">{userNome}</span>
+            </div>
+          )}
         </div>
 
-        <nav className="p-5 space-y-2 shrink-0">
-          <button
-            onClick={() => setAba('dashboard')}
-            className={`w-full flex items-center gap-3 px-5 py-4 rounded-2xl transition-all duration-300 ${aba === 'dashboard' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-          >
-            <LayoutDashboard size={18} /> <span className="font-black text-xs uppercase tracking-widest">Dashboard</span>
-          </button>
+        {/* Sidebar ADMIN: acesso completo */}
+        {userRole === 'admin' && (
+          <nav className="p-5 space-y-1 shrink-0">
+            {/* ── Save the Date ── */}
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 px-2 pb-1 pt-2">📅 Save the Date</p>
+            <button
+              onClick={() => { setModulo('std_dashboard'); setAba('dashboard'); }}
+              className={`w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl transition-all duration-200 ${modulo === 'std_dashboard' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <LayoutDashboard size={16} /> <span className="font-black text-xs uppercase tracking-widest">Dashboard</span>
+            </button>
+            <button
+              onClick={() => { setModulo('std_convidados'); setAba('convidados'); }}
+              className={`w-full flex items-center justify-between px-5 py-3.5 rounded-2xl transition-all duration-200 ${modulo === 'std_convidados' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <div className="flex items-center gap-3"><Users size={16} /> <span className="font-black text-xs uppercase tracking-widest">Base VIP</span></div>
+              {guests.length > 0 && <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${modulo === 'std_convidados' ? 'bg-slate-100 text-slate-600' : 'bg-slate-800 text-slate-300'}`}>{guests.length}</span>}
+            </button>
+            <button
+              onClick={() => { setModulo('std_config'); setAba('configuracoes'); }}
+              className={`w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl transition-all duration-200 ${modulo === 'std_config' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <Settings size={16} /> <span className="font-black text-xs uppercase tracking-widest">Configurar</span>
+            </button>
 
-          <button
-            onClick={() => setAba('convidados')}
-            className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl transition-all duration-300 ${aba === 'convidados' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-          >
-            <div className="flex items-center gap-3">
-              <Users size={18} /> <span className="font-black text-xs uppercase tracking-widest">Base VIP</span>
-            </div>
-            {guests.length > 0 && <span className={`text-[10px] font-black px-2 py-1 rounded-md ${aba === 'convidados' ? 'bg-slate-100 text-slate-600' : 'bg-slate-800 text-slate-300'}`}>{guests.length}</span>}
-          </button>
+            {/* ── Convite ── */}
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 px-2 pb-1 pt-4">🎟️ Convite</p>
+            <button
+              onClick={() => setModulo('convite')}
+              className={`w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl transition-all duration-200 ${modulo === 'convite' ? 'bg-amber-400 text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <Ticket size={16} /> <span className="font-black text-xs uppercase tracking-widest">Gerir Convites</span>
+            </button>
 
-          <button
-            onClick={() => setAba('configuracoes')}
-            className={`w-full flex items-center gap-3 px-5 py-4 rounded-2xl transition-all duration-300 ${aba === 'configuracoes' ? 'bg-white text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-          >
-            <Settings size={18} /> <span className="font-black text-xs uppercase tracking-widest">Narrativa & Config</span>
-          </button>
-        </nav>
+            {/* ── Check-in ── */}
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 px-2 pb-1 pt-4">✅ Check-in</p>
+            <button
+              onClick={() => setModulo('checkin')}
+              className={`w-full flex items-center gap-3 px-5 py-3.5 rounded-2xl transition-all duration-200 ${modulo === 'checkin' ? 'bg-emerald-400 text-slate-900 shadow-xl' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+            >
+              <ScanLine size={16} /> <span className="font-black text-xs uppercase tracking-widest">Scanner QR / Painel</span>
+            </button>
+          </nav>
+        )}
+
+        {/* Sidebar SCAN: apenas check-in */}
+        {userRole === 'scan' && (
+          <nav className="p-5 space-y-2 shrink-0 flex-1 flex flex-col justify-center">
+            <p className="text-center text-[9px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">Módulo de Acesso</p>
+            <button
+              onClick={() => setModulo('checkin')}
+              className="w-full flex items-center justify-center gap-3 px-5 py-5 rounded-2xl bg-emerald-500 text-white shadow-xl font-black text-sm uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95"
+            >
+              <ScanLine size={20} /> Scanner QR Check-in
+            </button>
+            <p className="text-center text-[9px] text-slate-600 font-bold mt-4">Acesso restrito ao módulo de scanner</p>
+          </nav>
+        )}
+
 
         <div className="p-6 border-t border-slate-800 space-y-3 mt-auto shrink-0">
-          <button
-            onClick={() => setShowDisparo(true)}
-            disabled={disparoPendentesCount === 0 && failedGuests.length === 0}
-            className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-20 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-lg"
-          >
-            <Zap size={16} /> Disparar Convites
-          </button>
+          {/* Botões de Admin: disparo e manutenção */}
+          {userRole === 'admin' && (
+            <>
+              <button
+                onClick={() => setShowDisparo(true)}
+                disabled={disparoPendentesCount === 0 && failedGuests.length === 0}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-20 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all shadow-lg"
+              >
+                <Zap size={16} /> Disparar STD
+              </button>
 
-          <button
-            onClick={async () => {
-              const statsRes = await fetch(`${API}/api/guests/reconciliation`, { headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              const statsData = await statsRes.json();
-              const s = statsData.stats;
-              const msg = `🏁 FINALIZAR FASE ATUAL?\n\n📊 Reconciliação:\n✅ Confirmados: ${s.confirmados}\n🤔 Dúvida: ${s.duvida}\n❌ Recusados: ${s.recusados}\n⏳ Sem resposta: ${s.sem_resposta}\n\nIsso arquiva tudo no histórico e transiciona (Save the Date → Convite). Envio é resetado para nova fase. Tem certeza?`;
-              if (!confirm(msg)) return;
-              const notes = prompt('Observações sobre esta fase (opcional):') || '';
-              const res = await fetch(`${API}/api/event/finalize-phase`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
-                body: JSON.stringify({ notes })
-              });
-              const data = await res.json();
-              if (res.ok) { alert(`✅ ${data.message}`); fetchData(); }
-              else alert(`❌ ${data.error || 'Erro ao finalizar fase.'}`);
-            }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg"
-          >
-            🏁 Finalizar Fase
-          </button>
+              <button
+                onClick={async () => {
+                  const statsRes = await fetch(`${API}/api/guests/reconciliation`, { headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                  const statsData = await statsRes.json();
+                  const s = statsData.stats;
+                  const msg = `🏁 FINALIZAR FASE ATUAL?\n\n📊 Reconciliação:\n✅ Confirmados: ${s.confirmados}\n🤔 Dúvida: ${s.duvida}\n❌ Recusados: ${s.recusados}\n⏳ Sem resposta: ${s.sem_resposta}\n\nIsso arquiva tudo no histórico e transiciona (Save the Date → Convite). Envio é resetado para nova fase. Tem certeza?`;
+                  if (!confirm(msg)) return;
+                  const notes = prompt('Observações sobre esta fase (opcional):') || '';
+                  const res = await fetch(`${API}/api/event/finalize-phase`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('admin_token')}` },
+                    body: JSON.stringify({ notes })
+                  });
+                  const data = await res.json();
+                  if (res.ok) { alert(`✅ ${data.message}`); fetchData(); }
+                  else alert(`❌ ${data.error || 'Erro ao finalizar fase.'}`);
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-lg"
+              >
+                🏁 Finalizar Fase
+              </button>
 
-          <div className="bg-slate-800/50 rounded-xl p-3 space-y-2 border border-slate-700">
-            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block text-center mb-2">Ações de Manutenção</span>
-            <button
-              onClick={async () => {
-                if (!confirm('🔄 Resetar apenas os envios com ERRO para Pendente?')) return;
-                const res = await fetch(`${API}/api/guests/reset-envios`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-                if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
-            >
-              🔄 Reenviar Somente Erros
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm('⚠️ Resetar TODOS os envios para Pendente?')) return;
-                const res = await fetch(`${API}/api/guests/reset-envios-todos`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-                if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-amber-900/50 text-slate-500 hover:text-amber-400 rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
-            >
-              🔁 Reset Todos Envios
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm('⏪ Desfazer o último reset? (Retrocede envios)')) return;
-                const res = await fetch(`${API}/api/guests/rollback`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-                if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-900/30 hover:bg-indigo-800/50 text-indigo-400 rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
-            >
-              ⏪ Desfazer Reset
-            </button>
-          </div>
+              <div className="bg-slate-800/50 rounded-xl p-3 space-y-2 border border-slate-700">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block text-center mb-2">Ações de Manutenção</span>
+                <button
+                  onClick={async () => {
+                    if (!confirm('🔄 Resetar apenas os envios com ERRO para Pendente?')) return;
+                    const res = await fetch(`${API}/api/guests/reset-envios`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                    if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
+                >
+                  🔄 Reenviar Somente Erros
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!confirm('⚠️ Resetar TODOS os envios para Pendente?')) return;
+                    const res = await fetch(`${API}/api/guests/reset-envios-todos`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                    if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-amber-900/50 text-slate-500 hover:text-amber-400 rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
+                >
+                  🔁 Reset Todos Envios
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!confirm('⏪ Desfazer o último reset? (Retrocede envios)')) return;
+                    const res = await fetch(`${API}/api/guests/rollback`, { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                    if (res.ok) { const data = await res.json(); alert(`✅ ${data.message}`); fetchData(); }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-indigo-900/30 hover:bg-indigo-800/50 text-indigo-400 rounded-lg font-bold text-[9px] uppercase tracking-wider transition-all"
+                >
+                  ⏪ Desfazer Reset
+                </button>
+              </div>
 
+              <button
+                onClick={async () => {
+                  if (!confirm('🔴 APAGAR TODA A BASE ATUAL?\nTodos os convidados atuais serão excluídos (o histórico de fases se mantém). Use isso para carregar uma planliha 100% nova para outro evento.')) return;
+                  const res = await fetch(`${API}/api/guests`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
+                  if (res.ok) { alert('✅ Base zerada com sucesso!'); fetchData(); }
+                  else alert('❌ Erro ao zerar base.');
+                }}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-rose-600 text-rose-500 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all mt-4 border border-rose-900"
+              >
+                🗑️ Limpar Base Inteira
+              </button>
+            </>
+          )}
+
+          {/* Botão de Sair — sempre visível */}
           <button
-            onClick={async () => {
-              if (!confirm('🔴 APAGAR TODA A BASE ATUAL?\nTodos os convidados atuais serão excluídos (o histórico de fases se mantém). Use isso para carregar uma planliha 100% nova para outro evento.')) return;
-              const res = await fetch(`${API}/api/guests`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('admin_token')}` } });
-              if (res.ok) { alert('✅ Base zerada com sucesso!'); fetchData(); }
-              else alert('❌ Erro ao zerar base.');
-            }}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800 hover:bg-rose-600 text-rose-500 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all mt-4 border border-rose-900"
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-slate-800/60 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
           >
-            🗑️ Limpar Base Inteira
+            🚪 Sair
           </button>
         </div>
       </aside>
 
+
       {/* ── MAIN ──────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto p-12 bg-[#F8FAFC]">
-        {/* DASHBOARD TAB (Analytics & Failures only) */}
-        {aba === 'dashboard' && (
-          <div className="space-y-10 animate-in fade-in">
-            <div className="flex items-center justify-between"><div>
-              <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Dashboard & Resiliência</h2>
-              <div className="h-1 w-16 bg-rose-500 mt-3 rounded-full" />
-            </div><button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all" title="Atualizar dados"><RefreshCw size={14} /> Atualizar</button></div>
+      <main className="flex-1 overflow-y-auto p-8 bg-[#F8FAFC]">
 
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-              <Stat label="Total Lista" value={totalListaCount} color="text-slate-800" />
-              <Stat label="Confirmados" value={confirmadosCount} color="text-emerald-500" />
-              <Stat label="Provisório" value={getCount(guests.filter(g => g.status === 'Duvida'))} color="text-blue-500" />
-              <Stat label="Recusados" value={recusadosCount} color="text-slate-400" />
-              <Stat label="Pendente" value={rsvpPendentesCount} color="text-amber-500" />
-              <Stat label="Dependentes" value={dependentesCount} color="text-indigo-500" />
-              <Stat label="Falhas" value={failedGuests.length} color="text-rose-600" alert={failedGuests.length > 0} />
+        {/* ── MÓDULO CONVITE ────────────────────────── */}
+        {modulo === 'convite' && (
+          <div className="space-y-4 animate-in fade-in">
+            <div>
+              <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Convites</h2>
+              <div className="h-1 w-16 bg-amber-400 mt-3 rounded-full" />
             </div>
+            <Suspense fallback={<div className="flex items-center justify-center py-20 text-slate-400 text-sm font-bold">Carregando módulo...</div>}>
+              <ModuloConvite />
+            </Suspense>
+          </div>
+        )}
 
-            {/* 🎯 Presenças Esperadas */}
-            <div className="bg-gradient-to-r from-emerald-50 to-blue-50 border-2 border-emerald-200 rounded-[2rem] p-8 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-black text-emerald-600 tracking-widest">🎯 Presenças Esperadas na Festa</span>
-                <p className="text-[9px] text-slate-500 font-bold mt-1">Confirmados + Dúvida (convidados + dependentes)</p>
-              </div>
-              <span className="text-6xl font-black text-emerald-600 tracking-tighter">{presencasEsperadas}</span>
+        {/* ── MÓDULO CHECK-IN ───────────────────────── */}
+        {modulo === 'checkin' && (
+          <div className="space-y-4 animate-in fade-in">
+            <div>
+              <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Check-in</h2>
+              <div className="h-1 w-16 bg-emerald-500 mt-3 rounded-full" />
             </div>
+            <Suspense fallback={<div className="flex items-center justify-center py-20 text-slate-400 text-sm font-bold">Carregando módulo...</div>}>
+              <ModuloCheckin />
+            </Suspense>
+          </div>
+        )}
 
-            {/* 📊 Breakdowns: Faixa Etária e Gênero */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Adultos x Adolescentes */}
-              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
-                <span className="text-[10px] uppercase font-black text-indigo-500 tracking-widest">🎂 Faixa Etária Esperada</span>
-                <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Confirmados + Dúvida (com dependentes)</p>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Adultos</span>
-                    <span className="text-2xl font-black text-indigo-600">{adultosCont}</span>
-                  </div>
-                  <div className="h-px bg-slate-100" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Adolescentes</span>
-                    <span className="text-2xl font-black text-violet-500">{adolescentesCont}</span>
-                  </div>
-                  <div className="h-px bg-slate-100" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Menores</span>
-                    <span className="text-2xl font-black text-sky-500">{menoresCont}</span>
-                  </div>
-                </div>
-              </div>
+        {/* ── MÓDULOS STD (dashboard / convidados / configurações) ── */}
+        {(modulo === 'std_dashboard' || modulo === 'std_convidados' || modulo === 'std_config') && (
+          <>
+            {/* DASHBOARD TAB (Analytics & Failures only) */}
+            {aba === 'dashboard' && (
 
-              {/* Masculino x Feminino */}
-              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
-                <span className="text-[10px] uppercase font-black text-rose-500 tracking-widest">⚧ Gênero Esperado</span>
-                <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Confirmados + Dúvida (com dependentes)</p>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Feminino</span>
-                    <span className="text-2xl font-black text-rose-500">{femininoCont}</span>
-                  </div>
-                  <div className="h-px bg-slate-100" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Masculino</span>
-                    <span className="text-2xl font-black text-blue-500">{masculinoCont}</span>
-                  </div>
-                </div>
-              </div>
+              <div className="space-y-10 animate-in fade-in">
+                <div className="flex items-center justify-between"><div>
+                  <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Dashboard & Resiliência</h2>
+                  <div className="h-1 w-16 bg-rose-500 mt-3 rounded-full" />
+                </div><button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all" title="Atualizar dados"><RefreshCw size={14} /> Atualizar</button></div>
 
-              {/* Resumo visual de presença */}
-              <div className="bg-gradient-to-br from-emerald-50 to-indigo-50 border-2 border-emerald-200 rounded-[2rem] p-6">
-                <span className="text-[10px] uppercase font-black text-emerald-600 tracking-widest">🎯 Composição da Festa</span>
-                <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Previsão total por perfil</p>
-                <div className="space-y-2">
-                  {[
-                    { label: '👩‍🦰 Adultos Fem.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto' && g.sexo === 'Feminino')), color: 'text-rose-500' },
-                    { label: '👨 Adultos Masc.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto' && g.sexo === 'Masculino')), color: 'text-blue-500' },
-                    { label: '👧 Adol. Fem.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente' && g.sexo === 'Feminino')), color: 'text-violet-500' },
-                    { label: '👦 Adol. Masc.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente' && g.sexo === 'Masculino')), color: 'text-sky-500' },
-                    { label: '🧒 Menores', value: menoresCont, color: 'text-amber-500' },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-600">{label}</span>
-                      <span className={`text-lg font-black ${color}`}>{value}</span>
-                    </div>
-                  ))}
-                  <div className="h-px bg-emerald-200 mt-1" />
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[10px] font-black text-emerald-700 uppercase">Total</span>
-                    <span className="text-2xl font-black text-emerald-700">{presencasEsperadas}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* CRM Analytics */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Stat label="📤 Enviados" value={enviadosCount} color="text-blue-600" />
-              <Stat label="📬 Respostas" value={respostasCount} color="text-violet-600" />
-              <Stat label="⚡ Taxa Resposta" value={`${taxaResposta}%`} color="text-emerald-600" />
-              <Stat label="⏱️ Tempo Médio" value={tempoMedioResposta} color="text-amber-600" />
-            </div>
-
-            {/* Demográfico */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <Stat label="♂️ Masculino" value={guests.filter(g => (g.sexo || 'Masculino') === 'Masculino').length} color="text-blue-500" />
-              <Stat label="♀️ Feminino" value={guests.filter(g => g.sexo === 'Feminino').length} color="text-pink-500" />
-              <Stat label="🧑 Adultos" value={guests.filter(g => (g.idade || 'Adulto') === 'Adulto').length} color="text-slate-700" />
-              <Stat label="🧒 Adolescentes" value={guests.filter(g => g.idade === 'Adolescente').length} color="text-amber-500" />
-              <Stat label="👶 Menores" value={guests.filter(g => g.idade === 'Menor').length} color="text-violet-500" />
-            </div>
-
-            {failedGuests.length > 0 && (
-              <div className="bg-rose-50 border border-rose-200 rounded-[2rem] p-8 shadow-sm">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                  <div className="flex items-center gap-3 text-rose-700">
-                    <AlertTriangle size={24} />
-                    <h3 className="font-black text-xl uppercase tracking-tighter">Monitor de Falhas de Envio</h3>
-                    <span className="bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">{failedGuests.length} erro(s) vivo(s)</span>
-                  </div>
-
-                  <button onClick={handleBatchResend} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 w-fit">
-                    <RefreshCcw size={14} /> Reenviar Todos ({failedGuests.length})
-                  </button>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                  <Stat label="Total Lista" value={totalListaCount} color="text-slate-800" />
+                  <Stat label="Confirmados" value={confirmadosCount} color="text-emerald-500" />
+                  <Stat label="Provisório" value={getCount(guests.filter(g => g.status === 'Duvida'))} color="text-blue-500" />
+                  <Stat label="Recusados" value={recusadosCount} color="text-slate-400" />
+                  <Stat label="Pendente" value={rsvpPendentesCount} color="text-amber-500" />
+                  <Stat label="Dependentes" value={dependentesCount} color="text-indigo-500" />
+                  <Stat label="Falhas" value={failedGuests.length} color="text-rose-600" alert={failedGuests.length > 0} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {failedGuests.map(fg => (
-                    <div key={fg.id} className="bg-white rounded-2xl p-5 flex items-center justify-between shadow-sm border border-rose-100">
-                      <div>
-                        <div className="font-black text-slate-900 text-sm flex items-center gap-2">{fg.apelido || fg.nome} <span className="bg-rose-100 text-rose-600 text-[8px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest">Falhou</span></div>
-                        <div className="text-xs text-slate-500 mt-1 font-medium">{fg.celular}</div>
+                {/* 🎯 Presenças Esperadas */}
+                <div className="bg-gradient-to-r from-emerald-50 to-blue-50 border-2 border-emerald-200 rounded-[2rem] p-8 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-black text-emerald-600 tracking-widest">🎯 Presenças Esperadas na Festa</span>
+                    <p className="text-[9px] text-slate-500 font-bold mt-1">Confirmados + Dúvida (convidados + dependentes)</p>
+                  </div>
+                  <span className="text-6xl font-black text-emerald-600 tracking-tighter">{presencasEsperadas}</span>
+                </div>
+
+                {/* 📊 Breakdowns: Faixa Etária e Gênero */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Adultos x Adolescentes */}
+                  <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                    <span className="text-[10px] uppercase font-black text-indigo-500 tracking-widest">🎂 Faixa Etária Esperada</span>
+                    <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Confirmados + Dúvida (com dependentes)</p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Adultos</span>
+                        <span className="text-2xl font-black text-indigo-600">{adultosCont}</span>
                       </div>
-                      <button onClick={() => handleSendWhatsApp(fg)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2 flex-shrink-0 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 border border-emerald-100 shadow-sm relative group overflow-hidden">
-                        <span className="absolute inset-0 w-full h-full bg-emerald-200 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
-                        <span className="relative z-10 flex items-center gap-2"><RefreshCw size={12} /> Reenviar</span>
+                      <div className="h-px bg-slate-100" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Adolescentes</span>
+                        <span className="text-2xl font-black text-violet-500">{adolescentesCont}</span>
+                      </div>
+                      <div className="h-px bg-slate-100" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Menores</span>
+                        <span className="text-2xl font-black text-sky-500">{menoresCont}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Masculino x Feminino */}
+                  <div className="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-sm">
+                    <span className="text-[10px] uppercase font-black text-rose-500 tracking-widest">⚧ Gênero Esperado</span>
+                    <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Confirmados + Dúvida (com dependentes)</p>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Feminino</span>
+                        <span className="text-2xl font-black text-rose-500">{femininoCont}</span>
+                      </div>
+                      <div className="h-px bg-slate-100" />
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-600">Masculino</span>
+                        <span className="text-2xl font-black text-blue-500">{masculinoCont}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Resumo visual de presença */}
+                  <div className="bg-gradient-to-br from-emerald-50 to-indigo-50 border-2 border-emerald-200 rounded-[2rem] p-6">
+                    <span className="text-[10px] uppercase font-black text-emerald-600 tracking-widest">🎯 Composição da Festa</span>
+                    <p className="text-[9px] text-slate-400 font-bold mt-1 mb-5">Previsão total por perfil</p>
+                    <div className="space-y-2">
+                      {[
+                        { label: '👩‍🦰 Adultos Fem.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto' && g.sexo === 'Feminino')), color: 'text-rose-500' },
+                        { label: '👨 Adultos Masc.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adulto' && g.sexo === 'Masculino')), color: 'text-blue-500' },
+                        { label: '👧 Adol. Fem.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente' && g.sexo === 'Feminino')), color: 'text-violet-500' },
+                        { label: '👦 Adol. Masc.', value: getCount(confirmadosEDuvida.filter(g => g.idade === 'Adolescente' && g.sexo === 'Masculino')), color: 'text-sky-500' },
+                        { label: '🧒 Menores', value: menoresCont, color: 'text-amber-500' },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-600">{label}</span>
+                          <span className={`text-lg font-black ${color}`}>{value}</span>
+                        </div>
+                      ))}
+                      <div className="h-px bg-emerald-200 mt-1" />
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] font-black text-emerald-700 uppercase">Total</span>
+                        <span className="text-2xl font-black text-emerald-700">{presencasEsperadas}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CRM Analytics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Stat label="📤 Enviados" value={enviadosCount} color="text-blue-600" />
+                  <Stat label="📬 Respostas" value={respostasCount} color="text-violet-600" />
+                  <Stat label="⚡ Taxa Resposta" value={`${taxaResposta}%`} color="text-emerald-600" />
+                  <Stat label="⏱️ Tempo Médio" value={tempoMedioResposta} color="text-amber-600" />
+                </div>
+
+                {/* Demográfico */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <Stat label="♂️ Masculino" value={guests.filter(g => (g.sexo || 'Masculino') === 'Masculino').length} color="text-blue-500" />
+                  <Stat label="♀️ Feminino" value={guests.filter(g => g.sexo === 'Feminino').length} color="text-pink-500" />
+                  <Stat label="🧑 Adultos" value={guests.filter(g => (g.idade || 'Adulto') === 'Adulto').length} color="text-slate-700" />
+                  <Stat label="🧒 Adolescentes" value={guests.filter(g => g.idade === 'Adolescente').length} color="text-amber-500" />
+                  <Stat label="👶 Menores" value={guests.filter(g => g.idade === 'Menor').length} color="text-violet-500" />
+                </div>
+
+                {failedGuests.length > 0 && (
+                  <div className="bg-rose-50 border border-rose-200 rounded-[2rem] p-8 shadow-sm">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                      <div className="flex items-center gap-3 text-rose-700">
+                        <AlertTriangle size={24} />
+                        <h3 className="font-black text-xl uppercase tracking-tighter">Monitor de Falhas de Envio</h3>
+                        <span className="bg-rose-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">{failedGuests.length} erro(s) vivo(s)</span>
+                      </div>
+
+                      <button onClick={handleBatchResend} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-3 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all shadow-lg flex items-center gap-2 w-fit">
+                        <RefreshCcw size={14} /> Reenviar Todos ({failedGuests.length})
                       </button>
                     </div>
-                  ))}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {failedGuests.map(fg => (
+                        <div key={fg.id} className="bg-white rounded-2xl p-5 flex items-center justify-between shadow-sm border border-rose-100">
+                          <div>
+                            <div className="font-black text-slate-900 text-sm flex items-center gap-2">{fg.apelido || fg.nome} <span className="bg-rose-100 text-rose-600 text-[8px] px-1.5 py-0.5 rounded uppercase font-bold tracking-widest">Falhou</span></div>
+                            <div className="text-xs text-slate-500 mt-1 font-medium">{fg.celular}</div>
+                          </div>
+                          <button onClick={() => handleSendWhatsApp(fg)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2 flex-shrink-0 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors flex items-center gap-2 border border-emerald-100 shadow-sm relative group overflow-hidden">
+                            <span className="absolute inset-0 w-full h-full bg-emerald-200 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
+                            <span className="relative z-10 flex items-center gap-2"><RefreshCw size={12} /> Reenviar</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Histórico de Fases */}
+                <PhaseHistory />
+
+                {/* DEBUG APENAS: Para o user conseguir testar o alerta de erro sem disparar whatsapp */}
+                <div className="pt-20 opacity-30">
+                  <button onClick={markErrorTest} className="text-xs border px-3 py-1 rounded">DEBUG: Forçar Erro envio no Convidado 1</button>
                 </div>
               </div>
             )}
 
-            {/* Histórico de Fases */}
-            <PhaseHistory />
-
-            {/* DEBUG APENAS: Para o user conseguir testar o alerta de erro sem disparar whatsapp */}
-            <div className="pt-20 opacity-30">
-              <button onClick={markErrorTest} className="text-xs border px-3 py-1 rounded">DEBUG: Forçar Erro envio no Convidado 1</button>
-            </div>
-          </div>
-        )}
-
-        {/* BASE VIP (Operation & Lists only) */}
-        {aba === 'convidados' && (
-          <div className="space-y-6 animate-in fade-in">
-            <div>
-              <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Operação da Base VIP</h2>
-              <div className="h-1 w-16 bg-emerald-500 mt-3 rounded-full" />
-            </div>
-
-            <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3 block sm:flex gap-4">
-                <div className="flex items-center gap-2 text-slate-900 font-black uppercase text-xs tracking-widest shrink-0">
-                  <Plus size={16} className="text-emerald-500" /> Cadastrar Novo VIP
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                  <button onClick={handleClearGuestList} className="flex flex-1 sm:flex-none justify-center items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors border border-rose-200 shadow-sm">
-                    <Trash2 size={14} /> Limpar Base
-                  </button>
-                  <input type="file" ref={excelInputRef} style={{ display: 'none' }} accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
-                  <button onClick={() => excelInputRef.current?.click()} className="flex flex-1 sm:flex-none justify-center items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors border border-emerald-200 shadow-sm">
-                    <Users size={14} /> Importar Excel
-                  </button>
-                </div>
-              </div>
-              <form onSubmit={handleAddGuest} className="flex flex-col md:flex-row gap-4">
-                <input required placeholder="Nome Completo" value={novoGuest.nome} onChange={e => setNovoGuest({ ...novoGuest, nome: e.target.value })} className="flex-1 bg-slate-50 rounded-xl px-5 py-3 font-bold text-sm border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400" />
-                <div className="relative">
-                  <input required placeholder="Apelido / Primário" value={novoGuest.apelido} onChange={e => setNovoGuest({ ...novoGuest, apelido: e.target.value })} className="w-full md:w-52 bg-rose-50 rounded-xl px-5 py-3 font-bold text-sm border border-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-400 text-rose-700 placeholder-rose-300" />
-                </div>
-                <input required type="tel" placeholder="WhatsApp (DDD)" value={novoGuest.celular} onChange={e => setNovoGuest({ ...novoGuest, celular: e.target.value })} className="w-full md:w-48 bg-slate-50 rounded-xl px-5 py-3 font-bold text-sm border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400" />
-
-                <select value={novoGuest.idade} onChange={e => setNovoGuest({ ...novoGuest, idade: e.target.value })} className="bg-slate-50 rounded-xl px-4 py-3 font-bold text-sm border border-slate-200">
-                  <option>Adulto</option><option>Adolescente</option><option>Menor</option>
-                </select>
-
-                <select value={novoGuest.sexo} onChange={e => setNovoGuest({ ...novoGuest, sexo: e.target.value })} className="bg-slate-50 rounded-xl px-4 py-3 font-bold text-sm border border-slate-200">
-                  <option>Masculino</option><option>Feminino</option>
-                </select>
-
-                <div className="flex flex-col justify-center px-4 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">+ Deps</span>
-                  <input type="number" min="0" value={novoGuest.dependentes} onChange={e => setNovoGuest({ ...novoGuest, dependentes: parseInt(e.target.value) || 0 })} className="w-12 bg-transparent border-none text-center font-black text-sm focus:outline-none p-0 h-5" />
+            {/* BASE VIP (Operation & Lists only) */}
+            {aba === 'convidados' && (
+              <div className="space-y-6 animate-in fade-in">
+                <div>
+                  <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Operação da Base VIP</h2>
+                  <div className="h-1 w-16 bg-emerald-500 mt-3 rounded-full" />
                 </div>
 
-                <button type="submit" className="bg-slate-900 text-white px-8 rounded-xl hover:bg-slate-800 transition-colors font-black uppercase text-xs tracking-widest">
-                  Salvar
-                </button>
-              </form>
-            </div>
-
-            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 space-y-2">
-                <div className="flex flex-wrap justify-between items-center gap-2">
-                  <div className="relative flex-1 min-w-[180px] max-w-xs">
-                    <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input type="text" placeholder="Procurar nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 block sm:flex gap-4">
+                    <div className="flex items-center gap-2">
+                      <Plus size={16} className="text-emerald-500" />
+                      <span className="text-slate-900 font-black uppercase text-xs tracking-widest">Cadastrar Novo VIP</span>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <button onClick={() => setShowNovoGuest(true)}
+                        className="flex flex-1 sm:flex-none justify-center items-center gap-2 bg-slate-900 hover:bg-slate-700 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors shadow-sm">
+                        <Plus size={14} /> Novo VIP
+                      </button>
+                      <button onClick={handleClearGuestList} className="flex flex-1 sm:flex-none justify-center items-center gap-2 bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors border border-rose-200 shadow-sm">
+                        <Trash2 size={14} /> Limpar Base
+                      </button>
+                      <input type="file" ref={excelInputRef} style={{ display: 'none' }} accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
+                      <button onClick={() => excelInputRef.current?.click()} className="flex flex-1 sm:flex-none justify-center items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-colors border border-emerald-200 shadow-sm">
+                        <Users size={14} /> Importar Excel
+                      </button>
+                    </div>
                   </div>
-                  <button onClick={fetchData} className="text-slate-400 hover:text-slate-800 transition-colors p-2"><RefreshCw size={14} /></button>
-                </div>
-                {/* Chips de filtro RSVP */}
-                <div className="flex flex-wrap gap-2 items-center">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">RSVP:</span>
-                  {([['Pendente', '⏳', 'amber'], ['Confirmado', '✅', 'emerald'], ['Duvida', '🤔', 'blue'], ['Recusado', '❌', 'rose']] as const).map(([val, emoji, color]) => {
-                    const active = filtroStatus.includes(val);
-                    const toggle = () => setFiltroStatus(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
-                    return (
-                      <button key={val} onClick={toggle}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                          ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                            color === 'amber' ? 'bg-amber-400 border-amber-400 text-white' :
-                              color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' :
-                                'bg-rose-500 border-rose-500 text-white'
-                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                          }`}
-                      >
-                        {emoji} {val === 'Duvida' ? 'Dúvida' : val}
-                      </button>
-                    );
-                  })}
-                  {filtroStatus.length > 0 && (
-                    <button onClick={() => setFiltroStatus([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
-                  )}
-                </div>
-                {/* Chips de filtro Envio */}
-                <div className="flex flex-wrap gap-2 items-center">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">ENVIO:</span>
-                  {([['Pendente', '📤', 'slate'], ['Enviado', '✉️', 'emerald'], ['Erro', '🔴', 'rose']] as const).map(([val, emoji, color]) => {
-                    const active = filtroEnvio.includes(val);
-                    const toggle = () => setFiltroEnvio(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
-                    return (
-                      <button key={val} onClick={toggle}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                          ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
-                            color === 'rose' ? 'bg-rose-500 border-rose-500 text-white' :
-                              'bg-slate-700 border-slate-700 text-white'
-                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                          }`}
-                      >
-                        {emoji} {val === 'Pendente' ? 'Não enviado' : val}
-                      </button>
-                    );
-                  })}
-                  {filtroEnvio.length > 0 && (
-                    <button onClick={() => setFiltroEnvio([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
-                  )}
-                </div>
-                {/* Chips de filtro Contato (Remetente) */}
-                {uniqueSenders.length > 0 && (
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">CONTATO:</span>
-                    {uniqueSenders.map(sender => {
-                      const active = filtroSender.includes(sender);
-                      const toggle = () => setFiltroSender(prev => active ? prev.filter(s => s !== sender) : [...prev, sender]);
-                      const senderCount = guests.filter(g => g.sender_name === sender).length;
-                      const senderPendente = guests.filter(g => g.sender_name === sender && (g.status_envio || 'Pendente') === 'Pendente').length;
-                      return (
-                        <button key={sender} onClick={toggle}
-                          className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                            ? 'bg-indigo-500 border-indigo-500 text-white'
-                            : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300'
-                            }`}
-                        >
-                          👤 {sender} <span className="opacity-60">({senderPendente}/{senderCount})</span>
-                        </button>
-                      );
-                    })}
-                    {filtroSender.length > 0 && (
-                      <button onClick={() => setFiltroSender([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
-                    )}
-                  </div>
-                )}
-                {/* Chips de filtro Sexo */}
-                <div className="flex flex-wrap gap-2 items-center">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">SEXO:</span>
-                  {([['Masculino', '♂️', 'blue'], ['Feminino', '♀️', 'pink']] as const).map(([val, emoji, color]) => {
-                    const active = filtroSexo.includes(val);
-                    const toggle = () => setFiltroSexo(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
-                    return (
-                      <button key={val} onClick={toggle}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                          ? color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' : 'bg-pink-500 border-pink-500 text-white'
-                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                          }`}
-                      >
-                        {emoji} {val}
-                      </button>
-                    );
-                  })}
-                  {filtroSexo.length > 0 && (
-                    <button onClick={() => setFiltroSexo([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
-                  )}
-                </div>
-                {/* Chips de filtro Idade */}
-                <div className="flex flex-wrap gap-2 items-center">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">IDADE:</span>
-                  {([['Adulto', '🧑', 'slate'], ['Adolescente', '🧒', 'amber'], ['Menor', '👶', 'violet']] as const).map(([val, emoji, color]) => {
-                    const active = filtroIdade.includes(val);
-                    const toggle = () => setFiltroIdade(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
-                    return (
-                      <button key={val} onClick={toggle}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
-                          ? color === 'amber' ? 'bg-amber-500 border-amber-500 text-white' :
-                            color === 'violet' ? 'bg-violet-500 border-violet-500 text-white' :
-                              'bg-slate-700 border-slate-700 text-white'
-                          : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
-                          }`}
-                      >
-                        {emoji} {val}
-                      </button>
-                    );
-                  })}
-                  {filtroIdade.length > 0 && (
-                    <button onClick={() => setFiltroIdade([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
-                  )}
-                </div>
-              </div>
-              <div className="max-h-[500px] overflow-y-auto">
-                <table className="w-full text-left">
-                  <tbody>
-                    {guestsFiltrados.map(g => (
-                      <GuestRow key={g.id} guest={g} onSendWhatsApp={handleSendWhatsApp} onDelete={handleDeleteGuest} onRefresh={fetchData} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* NARRATIVA (Config only) */}
-        {aba === 'configuracoes' && (
-          <div className="space-y-6 animate-in fade-in max-w-5xl">
-            <header className="flex justify-between items-end mb-8">
-              <div>
-                <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Setup do App Convidado</h2>
-                <div className="h-1 w-16 bg-rose-500 mt-3 rounded-full" />
-              </div>
-              <button onClick={() => setShowSim(true)} className="flex items-center gap-2 px-6 py-4 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 shadow-lg">
-                <Eye size={16} /> Visualizar App
-              </button>
-            </header>
-
-            <form onSubmit={handleSaveConfig} className="space-y-8">
-              <Card>
-                <div className="flex items-start justify-between border-b border-slate-100 pb-5">
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter"><QrCode size={20} className="text-emerald-500" /> Connect Evolution API</h3>
-                    <p className="text-sm text-slate-500 font-medium mt-1">Sincronize a instância WhatsApp para envio em massa.</p>
-
-                    {wppStatus === 'QR_CODE' && (qrCodeData || pairingCode) && (
-                      <div className="mt-6 flex flex-col items-center p-6 bg-slate-50 border border-slate-200 rounded-2xl w-[280px]">
-                        {qrCodeData ? (
-                          <img src={qrCodeData} alt="WhatsApp QR Code" className="w-48 h-48 mix-blend-multiply" />
-                        ) : pairingCode ? (
-                          <div className="flex flex-col items-center gap-2">
-                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest text-center">Código de Pareamento</span>
-                            <span className="text-3xl font-black text-emerald-600 tracking-[0.2em]">{pairingCode}</span>
+                  {/* Modal Novo VIP */}
+                  {showNovoGuest && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4" onClick={() => setShowNovoGuest(false)}>
+                      <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-6">
+                          <div>
+                            <h2 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Novo VIP</h2>
+                            <p className="text-xs text-slate-400 font-bold mt-0.5">Cadastro direto na base Save the Date</p>
                           </div>
-                        ) : null}
-                        <span className="mt-4 text-[10px] font-black tracking-widest uppercase text-slate-400 animate-pulse">A aguardar conexão...</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2 text-right pt-2">
-                    {wppStatus === 'CONNECTED' ? (
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-xl">
-                          <Check size={14} className="text-emerald-600" />
-                          <span className="text-emerald-700 font-black text-xs uppercase tracking-widest">Sincronizado</span>
+                          <button onClick={() => setShowNovoGuest(false)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100">
+                            <X size={18} />
+                          </button>
                         </div>
-                        <button type="button" onClick={disconnectWpp} className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors">Desconectar</button>
+                        <form onSubmit={handleAddGuest} className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3">
+                            {[
+                              { label: 'Nome completo *', key: 'nome', ph: 'Ex: Maria Silva', req: true },
+                              { label: 'Como chamar (apelido)', key: 'apelido', ph: 'Ex: Mari' },
+                              { label: 'Celular (WhatsApp) *', key: 'celular', ph: 'Ex: 11999999999', req: true },
+                              { label: 'Idade', key: 'idade', ph: 'Ex: 35' },
+                            ].map(f => (
+                              <div key={f.key} className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">{f.label}</label>
+                                <input
+                                  required={f.req}
+                                  value={(novoGuest as any)[f.key]}
+                                  onChange={e => setNovoGuest(p => ({ ...p, [f.key]: e.target.value }))}
+                                  placeholder={f.ph}
+                                  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+                                />
+                              </div>
+                            ))}
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Sexo</label>
+                              <select value={novoGuest.sexo} onChange={e => setNovoGuest(p => ({ ...p, sexo: e.target.value }))}
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+                                <option value="">Não informado</option>
+                                <option value="M">Masculino</option>
+                                <option value="F">Feminino</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dependentes</label>
+                              <input type="number" min="0" max="10" value={novoGuest.dependentes}
+                                onChange={e => setNovoGuest(p => ({ ...p, dependentes: parseInt(e.target.value) || 0 }))}
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Remetente (quem convida)</label>
+                              <input value={novoGuest.sender_name}
+                                onChange={e => setNovoGuest(p => ({ ...p, sender_name: e.target.value }))}
+                                placeholder="Ex: Adriana"
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-400" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Artigo do remetente</label>
+                              <select value={novoGuest.artigo} onChange={e => setNovoGuest(p => ({ ...p, artigo: e.target.value }))}
+                                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-400">
+                                <option value="o">o (masculino)</option>
+                                <option value="a">a (feminino)</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-3 pt-2">
+                            <button type="button" onClick={() => setShowNovoGuest(false)}
+                              className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest transition-all">
+                              Cancelar
+                            </button>
+                            <button type="submit"
+                              className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2">
+                              ✅ Cadastrar VIP
+                            </button>
+                          </div>
+                        </form>
                       </div>
-                    ) : wppStatus === 'QR_CODE' ? (
-                      <button type="button" onClick={disconnectWpp} className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors">Cancelar</button>
-                    ) : (
-                      <button type="button" onClick={connectWpp} className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black uppercase text-xs tracking-widest px-5 py-3 rounded-xl transition-all shadow-sm">
-                        <QrCode size={16} /> Gerar QR API
-                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 space-y-2">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
+                      <div className="relative flex-1 min-w-[180px] max-w-xs">
+                        <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input type="text" placeholder="Procurar nome ou apelido..." value={busca} onChange={e => setBusca(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white rounded-lg border border-slate-200 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-200" />
+                      </div>
+                      <button onClick={fetchData} className="text-slate-400 hover:text-slate-800 transition-colors p-2"><RefreshCw size={14} /></button>
+                    </div>
+                    {/* Chips de filtro RSVP */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">RSVP:</span>
+                      {([['Pendente', '⏳', 'amber'], ['Confirmado', '✅', 'emerald'], ['Duvida', '🤔', 'blue'], ['Recusado', '❌', 'rose']] as const).map(([val, emoji, color]) => {
+                        const active = filtroStatus.includes(val);
+                        const toggle = () => setFiltroStatus(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                        return (
+                          <button key={val} onClick={toggle}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                              ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                                color === 'amber' ? 'bg-amber-400 border-amber-400 text-white' :
+                                  color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' :
+                                    'bg-rose-500 border-rose-500 text-white'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                              }`}
+                          >
+                            {emoji} {val === 'Duvida' ? 'Dúvida' : val}
+                          </button>
+                        );
+                      })}
+                      {filtroStatus.length > 0 && (
+                        <button onClick={() => setFiltroStatus([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                      )}
+                    </div>
+                    {/* Chips de filtro Envio */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">ENVIO:</span>
+                      {([['Pendente', '📤', 'slate'], ['Enviado', '✉️', 'emerald'], ['Erro', '🔴', 'rose']] as const).map(([val, emoji, color]) => {
+                        const active = filtroEnvio.includes(val);
+                        const toggle = () => setFiltroEnvio(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                        return (
+                          <button key={val} onClick={toggle}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                              ? color === 'emerald' ? 'bg-emerald-500 border-emerald-500 text-white' :
+                                color === 'rose' ? 'bg-rose-500 border-rose-500 text-white' :
+                                  'bg-slate-700 border-slate-700 text-white'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                              }`}
+                          >
+                            {emoji} {val === 'Pendente' ? 'Não enviado' : val}
+                          </button>
+                        );
+                      })}
+                      {filtroEnvio.length > 0 && (
+                        <button onClick={() => setFiltroEnvio([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                      )}
+                    </div>
+                    {/* Chips de filtro Contato (Remetente) */}
+                    {uniqueSenders.length > 0 && (
+                      <div className="flex flex-wrap gap-2 items-center">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">CONTATO:</span>
+                        {uniqueSenders.map(sender => {
+                          const active = filtroSender.includes(sender);
+                          const toggle = () => setFiltroSender(prev => active ? prev.filter(s => s !== sender) : [...prev, sender]);
+                          const senderCount = guests.filter(g => g.sender_name === sender).length;
+                          const senderPendente = guests.filter(g => g.sender_name === sender && (g.status_envio || 'Pendente') === 'Pendente').length;
+                          return (
+                            <button key={sender} onClick={toggle}
+                              className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                                ? 'bg-indigo-500 border-indigo-500 text-white'
+                                : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300'
+                                }`}
+                            >
+                              👤 {sender} <span className="opacity-60">({senderPendente}/{senderCount})</span>
+                            </button>
+                          );
+                        })}
+                        {filtroSender.length > 0 && (
+                          <button onClick={() => setFiltroSender([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                        )}
+                      </div>
                     )}
+                    {/* Chips de filtro Sexo */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">SEXO:</span>
+                      {([['Masculino', '♂️', 'blue'], ['Feminino', '♀️', 'pink']] as const).map(([val, emoji, color]) => {
+                        const active = filtroSexo.includes(val);
+                        const toggle = () => setFiltroSexo(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                        return (
+                          <button key={val} onClick={toggle}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                              ? color === 'blue' ? 'bg-blue-500 border-blue-500 text-white' : 'bg-pink-500 border-pink-500 text-white'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                              }`}
+                          >
+                            {emoji} {val}
+                          </button>
+                        );
+                      })}
+                      {filtroSexo.length > 0 && (
+                        <button onClick={() => setFiltroSexo([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                      )}
+                    </div>
+                    {/* Chips de filtro Idade */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">IDADE:</span>
+                      {([['Adulto', '🧑', 'slate'], ['Adolescente', '🧒', 'amber'], ['Menor', '👶', 'violet']] as const).map(([val, emoji, color]) => {
+                        const active = filtroIdade.includes(val);
+                        const toggle = () => setFiltroIdade(prev => active ? prev.filter(s => s !== val) : [...prev, val]);
+                        return (
+                          <button key={val} onClick={toggle}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${active
+                              ? color === 'amber' ? 'bg-amber-500 border-amber-500 text-white' :
+                                color === 'violet' ? 'bg-violet-500 border-violet-500 text-white' :
+                                  'bg-slate-700 border-slate-700 text-white'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                              }`}
+                          >
+                            {emoji} {val}
+                          </button>
+                        );
+                      })}
+                      {filtroIdade.length > 0 && (
+                        <button onClick={() => setFiltroIdade([])} className="px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-rose-200 text-rose-400 hover:bg-rose-50 transition-all">✕</button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="max-h-[500px] overflow-y-auto">
+                    <table className="w-full text-left">
+                      <tbody>
+                        {guestsFiltrados.map(g => (
+                          <GuestRow key={g.id} guest={g} onSendWhatsApp={handleSendWhatsApp} onDelete={handleDeleteGuest} onRefresh={fetchData} />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </Card>
+              </div>
+            )}
 
-              <div className="grid grid-cols-2 gap-8">
-                <Card>
-                  <h3 className="font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Settings size={16} className="text-rose-500" /> Identidade do Evento</h3>
-                  <Field label="Nome do Evento">
-                    <input type="text" placeholder="Ex: Aniversário Família Rein" value={config?.event_name || ''} onChange={e => setConfig(p => p ? { ...p, event_name: e.target.value } : null)} className={inputCls} />
-                  </Field>
-                  <Field label="Aniversariante(s) / Noivos / Debutante(s) / Casal">
-                    <input type="text" placeholder="Ex: João & Maria" value={config?.honorees || ''} onChange={e => setConfig(p => p ? { ...p, honorees: e.target.value } : null)} className={inputCls} />
-                  </Field>
-                  <Field label="Slogan">
-                    <input type="text" placeholder="Ex: 50 anos de amor" value={config?.slogan || ''} onChange={e => setConfig(p => p ? { ...p, slogan: e.target.value } : null)} className={inputCls} />
-                  </Field>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="📅 Prazo de Confirmação">
-                      <input type="date" value={config?.confirmation_deadline?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, confirmation_deadline: e.target.value } : null)} className={inputCls} />
-                    </Field>
-                    <Field label="🎉 Data do Evento">
-                      <input type="date" value={config?.event_date?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, event_date: e.target.value } : null)} className={inputCls} />
-                    </Field>
+            {/* NARRATIVA (Config only) */}
+            {aba === 'configuracoes' && (
+              <div className="space-y-6 animate-in fade-in max-w-5xl">
+                <header className="flex justify-between items-end mb-8">
+                  <div>
+                    <h2 className="text-3xl font-black tracking-tight text-slate-900 uppercase">Setup do App Convidado</h2>
+                    <div className="h-1 w-16 bg-rose-500 mt-3 rounded-full" />
                   </div>
-                </Card>
+                  <button onClick={() => setShowSim(true)} className="flex items-center gap-2 px-6 py-4 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 shadow-lg">
+                    <Eye size={16} /> Visualizar App
+                  </button>
+                </header>
 
-                <Card>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2"><Video size={16} className="text-rose-500" /> Mídia VPS</h3>
-                    <div className="bg-slate-100 px-3 py-1 rounded-lg text-slate-500 text-[9px] font-black uppercase">Vídeo Ativo: {config?.video_file || 'Nenhum'}</div>
+                <form onSubmit={handleSaveConfig} className="space-y-8">
+                  <Card>
+                    <div className="flex items-start justify-between border-b border-slate-100 pb-5">
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 flex items-center gap-2 uppercase tracking-tighter"><QrCode size={20} className="text-emerald-500" /> Connect Evolution API</h3>
+                        <p className="text-sm text-slate-500 font-medium mt-1">Sincronize a instância WhatsApp para envio em massa.</p>
+
+                        {wppStatus === 'QR_CODE' && (qrCodeData || pairingCode) && (
+                          <div className="mt-6 flex flex-col items-center p-6 bg-slate-50 border border-slate-200 rounded-2xl w-[280px]">
+                            {qrCodeData ? (
+                              <img src={qrCodeData} alt="WhatsApp QR Code" className="w-48 h-48 mix-blend-multiply" />
+                            ) : pairingCode ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest text-center">Código de Pareamento</span>
+                                <span className="text-3xl font-black text-emerald-600 tracking-[0.2em]">{pairingCode}</span>
+                              </div>
+                            ) : null}
+                            <span className="mt-4 text-[10px] font-black tracking-widest uppercase text-slate-400 animate-pulse">A aguardar conexão...</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col items-end gap-2 text-right pt-2">
+                        {wppStatus === 'CONNECTED' ? (
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-4 py-2 rounded-xl">
+                              <Check size={14} className="text-emerald-600" />
+                              <span className="text-emerald-700 font-black text-xs uppercase tracking-widest">Sincronizado</span>
+                            </div>
+                            <button type="button" onClick={disconnectWpp} className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors">Desconectar</button>
+                          </div>
+                        ) : wppStatus === 'QR_CODE' ? (
+                          <button type="button" onClick={disconnectWpp} className="text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-rose-500 transition-colors">Cancelar</button>
+                        ) : (
+                          <button type="button" onClick={connectWpp} className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black uppercase text-xs tracking-widest px-5 py-3 rounded-xl transition-all shadow-sm">
+                            <QrCode size={16} /> Gerar QR API
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+
+                  <div className="grid grid-cols-2 gap-8">
+                    <Card>
+                      <h3 className="font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><Settings size={16} className="text-rose-500" /> Identidade do Evento</h3>
+                      <Field label="Nome do Evento">
+                        <input type="text" placeholder="Ex: Aniversário Família Rein" value={config?.event_name || ''} onChange={e => setConfig(p => p ? { ...p, event_name: e.target.value } : null)} className={inputCls} />
+                      </Field>
+                      <Field label="Aniversariante(s) / Noivos / Debutante(s) / Casal">
+                        <input type="text" placeholder="Ex: João & Maria" value={config?.honorees || ''} onChange={e => setConfig(p => p ? { ...p, honorees: e.target.value } : null)} className={inputCls} />
+                      </Field>
+                      <Field label="Slogan">
+                        <input type="text" placeholder="Ex: 50 anos de amor" value={config?.slogan || ''} onChange={e => setConfig(p => p ? { ...p, slogan: e.target.value } : null)} className={inputCls} />
+                      </Field>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="📅 Prazo de Confirmação">
+                          <input type="date" value={config?.confirmation_deadline?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, confirmation_deadline: e.target.value } : null)} className={inputCls} />
+                        </Field>
+                        <Field label="🎉 Data do Evento">
+                          <input type="date" value={config?.event_date?.split('T')[0] || ''} onChange={e => setConfig(p => p ? { ...p, event_date: e.target.value } : null)} className={inputCls} />
+                        </Field>
+                      </div>
+                    </Card>
+
+                    <Card>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-black text-sm uppercase tracking-widest flex items-center gap-2"><Video size={16} className="text-rose-500" /> Mídia VPS</h3>
+                        <div className="bg-slate-100 px-3 py-1 rounded-lg text-slate-500 text-[9px] font-black uppercase">Vídeo Ativo: {config?.video_file || 'Nenhum'}</div>
+                      </div>
+                      <Field label="Ficheiro Local (.mp4)">
+                        <input type="file" ref={videoInputRef} style={{ display: 'none' }} accept="video/mp4" onChange={handleVideoUpload} />
+                        <button
+                          type="button"
+                          onClick={() => !uploadingVideo && videoInputRef.current?.click()}
+                          disabled={uploadingVideo}
+                          className={`w-full px-5 py-4 border-2 border-dashed rounded-xl flex items-center justify-center gap-2 font-bold text-sm transition-all ${uploadingVideo ? 'bg-slate-50 border-slate-200 text-slate-400' : 'bg-slate-50 border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
+                        >
+                          {uploadingVideo ? <><RefreshCw size={18} className="animate-spin" /> Upload em progresso...</> : <><Plus size={18} /> Enviar Vídeo (.mp4) para Servidor</>}
+                        </button>
+                      </Field>
+
+                      <div className="grid grid-cols-3 gap-3 pt-4">
+                        <Field label="Label SIM"><input type="text" value={config?.btn_confirm_text || ''} onChange={e => setConfig(p => p ? { ...p, btn_confirm_text: e.target.value } : null)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" /></Field>
+                        <Field label="Label DÚVIDA"><input type="text" value={config?.btn_doubt_text || ''} onChange={e => setConfig(p => p ? { ...p, btn_doubt_text: e.target.value } : null)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" /></Field>
+                        <Field label="Label NÃO"><input type="text" value={config?.btn_decline_text || ''} onChange={e => setConfig(p => p ? { ...p, btn_decline_text: e.target.value } : null)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" /></Field>
+                      </div>
+                    </Card>
                   </div>
-                  <Field label="Ficheiro Local (.mp4)">
-                    <input type="file" ref={videoInputRef} style={{ display: 'none' }} accept="video/mp4" onChange={handleVideoUpload} />
-                    <button
-                      type="button"
-                      onClick={() => !uploadingVideo && videoInputRef.current?.click()}
-                      disabled={uploadingVideo}
-                      className={`w-full px-5 py-4 border-2 border-dashed rounded-xl flex items-center justify-center gap-2 font-bold text-sm transition-all ${uploadingVideo ? 'bg-slate-50 border-slate-200 text-slate-400' : 'bg-slate-50 border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
-                    >
-                      {uploadingVideo ? <><RefreshCw size={18} className="animate-spin" /> Upload em progresso...</> : <><Plus size={18} /> Enviar Vídeo (.mp4) para Servidor</>}
+
+                  <Card>
+                    <h3 className="font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><MessageCircle size={16} className="text-rose-500" /> Gatilhos de Sucesso RSVP</h3>
+                    <div className="grid grid-cols-3 gap-6">
+                      <Field label="Confirmação de Presença">
+                        <textarea value={config?.msg_success_confirm || ''} onChange={e => setConfig(p => p ? { ...p, msg_success_confirm: e.target.value } : null)} className="w-full px-5 py-4 bg-emerald-50 border border-emerald-100 rounded-xl resize-none h-28 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300" />
+                      </Field>
+                      <Field label="Marcou Dúvida">
+                        <textarea value={config?.msg_success_doubt || ''} onChange={e => setConfig(p => p ? { ...p, msg_success_doubt: e.target.value } : null)} className="w-full px-5 py-4 bg-amber-50 border border-amber-100 rounded-xl resize-none h-28 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
+                      </Field>
+                      <Field label="Recusou Convite">
+                        <textarea value={config?.msg_success_decline || ''} onChange={e => setConfig(p => p ? { ...p, msg_success_decline: e.target.value } : null)} className="w-full px-5 py-4 bg-rose-50 border border-rose-100 rounded-xl resize-none h-28 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-rose-300" />
+                      </Field>
+                    </div>
+                  </Card>
+
+                  <div className="flex justify-end pt-4 pb-12">
+                    <button type="submit" disabled={saving} className="px-10 py-5 bg-slate-900 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-3 hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-50">
+                      {saving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />} Salvar Definições
                     </button>
-                  </Field>
-
-                  <div className="grid grid-cols-3 gap-3 pt-4">
-                    <Field label="Label SIM"><input type="text" value={config?.btn_confirm_text || ''} onChange={e => setConfig(p => p ? { ...p, btn_confirm_text: e.target.value } : null)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" /></Field>
-                    <Field label="Label DÚVIDA"><input type="text" value={config?.btn_doubt_text || ''} onChange={e => setConfig(p => p ? { ...p, btn_doubt_text: e.target.value } : null)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" /></Field>
-                    <Field label="Label NÃO"><input type="text" value={config?.btn_decline_text || ''} onChange={e => setConfig(p => p ? { ...p, btn_decline_text: e.target.value } : null)} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold" /></Field>
                   </div>
-                </Card>
+                </form>
               </div>
-
-              <Card>
-                <h3 className="font-black text-sm uppercase tracking-widest mb-4 flex items-center gap-2"><MessageCircle size={16} className="text-rose-500" /> Gatilhos de Sucesso RSVP</h3>
-                <div className="grid grid-cols-3 gap-6">
-                  <Field label="Confirmação de Presença">
-                    <textarea value={config?.msg_success_confirm || ''} onChange={e => setConfig(p => p ? { ...p, msg_success_confirm: e.target.value } : null)} className="w-full px-5 py-4 bg-emerald-50 border border-emerald-100 rounded-xl resize-none h-28 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300" />
-                  </Field>
-                  <Field label="Marcou Dúvida">
-                    <textarea value={config?.msg_success_doubt || ''} onChange={e => setConfig(p => p ? { ...p, msg_success_doubt: e.target.value } : null)} className="w-full px-5 py-4 bg-amber-50 border border-amber-100 rounded-xl resize-none h-28 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-amber-300" />
-                  </Field>
-                  <Field label="Recusou Convite">
-                    <textarea value={config?.msg_success_decline || ''} onChange={e => setConfig(p => p ? { ...p, msg_success_decline: e.target.value } : null)} className="w-full px-5 py-4 bg-rose-50 border border-rose-100 rounded-xl resize-none h-28 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-rose-300" />
-                  </Field>
-                </div>
-              </Card>
-
-              <div className="flex justify-end pt-4 pb-12">
-                <button type="submit" disabled={saving} className="px-10 py-5 bg-slate-900 text-white rounded-xl font-black uppercase text-xs tracking-widest flex items-center gap-3 hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-50">
-                  {saving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />} Salvar Definições
-                </button>
-              </div>
-            </form>
-          </div>
+            )}
+          </>
         )}
       </main>
     </div>

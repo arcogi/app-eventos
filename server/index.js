@@ -9,15 +9,60 @@ const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'arcogi_eventos_jwt_secret_2026';
-// Admin credentials: admin@admin.com / Qaz2026!@#
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@admin.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Qaz2026!@#';
-const ADMIN_HASH = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+
+// Utilizadores autorizados com roles
+// role: 'admin' = acesso total | 'scan' = apenas módulo Check-in
+const USERS = [
+    {
+        email: process.env.ADMIN_EMAIL || 'admin@admin.com',
+        hash: bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'Qaz2026!@#', 10),
+        role: 'admin',
+        nome: 'Admin'
+    },
+    {
+        email: process.env.SCAN_EMAIL || 'scan@scan.com',
+        hash: bcrypt.hashSync(process.env.SCAN_PASSWORD || '1234098', 10),
+        role: 'scan',
+        nome: 'Operador Check-in'
+    }
+];
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configuração do PostgreSQL
+// Rota de Login Multi-User
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    const user = USERS.find(u => u.email === email);
+    if (!user) return res.status(401).json({ error: 'Credenciais inválidas.' });
+    const ok = await bcrypt.compare(password, user.hash);
+    if (!ok) return res.status(401).json({ error: 'Credenciais inválidas.' });
+    const token = jwt.sign({ email: user.email, role: user.role, nome: user.nome }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ token, role: user.role, nome: user.nome });
+});
+
+// Middleware de autenticação
+function requireAuth(req, res, next) {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Não autorizado.' });
+    try {
+        req.user = jwt.verify(auth.split(' ')[1], JWT_SECRET);
+        next();
+    } catch {
+        res.status(401).json({ error: 'Token inválido ou expirado.' });
+    }
+}
+
+// Middleware que exige role admin (bloqueia utilizadores scan)
+function requireAdmin(req, res, next) {
+    requireAuth(req, res, () => {
+        if (req.user?.role !== 'admin') {
+            return res.status(403).json({ error: 'Acesso restrito a administradores.' });
+        }
+        next();
+    });
+}
+
 const pool = new Pool({
     user: process.env.DB_USER || 'admin',
     host: process.env.DB_HOST || 'localhost',
@@ -50,28 +95,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '../apps/web/dist')));
 app.use('/admin', express.static(path.join(__dirname, '../apps/admin/dist')));
 
-// Rota de Login Admin
-app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
-    if (email !== ADMIN_EMAIL) return res.status(401).json({ error: 'Credenciais inválidas.' });
-    const ok = await bcrypt.compare(password, ADMIN_HASH);
-    if (!ok) return res.status(401).json({ error: 'Credenciais inválidas.' });
-    const token = jwt.sign({ email, role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ token });
-});
 
-// Middleware de autenticação
-function requireAuth(req, res, next) {
-    const auth = req.headers.authorization;
-    if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'Não autorizado.' });
-    try {
-        jwt.verify(auth.split(' ')[1], JWT_SECRET);
-        next();
-    } catch (e) {
-        res.status(401).json({ error: 'Token inválido ou expirado.' });
-    }
-}
-
+// Rota de Health Check
 // Rota de Health Check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'API do CRM Online e Operante!', versão: '1.0' });
@@ -219,6 +244,64 @@ async function initDB() {
         // Migração: whatsapp_msg_template em event_configs
         await client.query(`ALTER TABLE event_configs ADD COLUMN IF NOT EXISTS whatsapp_msg_template TEXT DEFAULT '{{intro}}\n\nTemos um convite especial para você{{deps}}.\n\n🎬 Assista até o final e confirme sua presença:\n\n{{link}}\n\n📌 Caso já tenha confirmado, por favor confirme novamente pelo link acima.';`);
 
+        // ── MÓDULO CONVITE: migrations aditivas (não tocam em dados existentes) ──
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS fase TEXT DEFAULT 'std';`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS status_convite TEXT DEFAULT 'pendente';`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS data_convite_enviado TIMESTAMP;`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS data_convite_aberto TIMESTAMP;`);
+
+        // ── MÓDULO CHECK-IN: migrations aditivas ──
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS status_checkin TEXT DEFAULT 'ausente';`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS data_checkin TIMESTAMP;`);
+        await client.query(`ALTER TABLE guests ADD COLUMN IF NOT EXISTS checkin_count INTEGER DEFAULT 0;`);
+
+        // ── Tabela de configurações do convite (separada do event_configs) ──
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS invite_configs (
+            id SERIAL PRIMARY KEY,
+            event_name TEXT,
+            event_date DATE,
+            event_time TEXT,
+            event_location TEXT,
+            event_location_map_url TEXT,
+            dress_code TEXT,
+            message TEXT,
+            cover_image TEXT,
+            video_file TEXT,
+            color_primary TEXT DEFAULT '#1e293b',
+            color_accent TEXT DEFAULT '#f59e0b',
+            whatsapp_msg_template TEXT DEFAULT 'Olá *{{apelido}}*! 🎉\n\nSeu convite para *{{event_name}}* está pronto.\n\n📍 Local: {{event_location}}\n📅 Data: {{event_date}}\n👗 Dress Code: {{dress_code}}\n\nAcesse seu convite personalizado com QR Code:\n{{link}}\n\nApresente o QR Code na entrada. Até lá! 🥂',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+          );
+        `);
+        // Migrações aditivas — campos de endereço e aniversariante
+        await client.query(`ALTER TABLE invite_configs ADD COLUMN IF NOT EXISTS event_address TEXT;`);
+        await client.query(`ALTER TABLE invite_configs ADD COLUMN IF NOT EXISTS honoree_name TEXT;`);
+
+        // Garantir uma linha padrão em invite_configs
+        const inviteCfgRes = await client.query('SELECT COUNT(*) FROM invite_configs');
+        if (parseInt(inviteCfgRes.rows[0].count) === 0) {
+            await client.query(`INSERT INTO invite_configs DEFAULT VALUES`);
+        }
+
+        // ── Tabela de log de check-in ──
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS checkin_log (
+            id SERIAL PRIMARY KEY,
+            guest_id UUID NOT NULL REFERENCES guests(id) ON DELETE CASCADE,
+            scanned_by TEXT DEFAULT 'operador',
+            device_info TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+        `);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_checkin_log_guest ON checkin_log(guest_id);`);
+        await client.query(`CREATE INDEX IF NOT EXISTS idx_checkin_log_created ON checkin_log(created_at DESC);`);
+
+        // ── Upload de imagem de capa do convite ──
+        const coverDir = path.join(__dirname, 'uploads', 'covers');
+        if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true });
+
         // Inserir linha padrão de config se estiver vazia
         const res = await client.query('SELECT COUNT(*) FROM event_configs');
         if (parseInt(res.rows[0].count) === 0) {
@@ -239,7 +322,7 @@ async function initDB() {
         }
 
         client.release();
-        console.log('✅ Banco de Dados Inicializado (PostgreSQL)');
+        console.log('✅ Banco de Dados Inicializado (PostgreSQL) — Módulos STD + Convite + Check-in prontos');
     } catch (err) {
         console.error('❌ Erro ao inicializar DB:', err);
     }
@@ -443,19 +526,20 @@ function formatPhone(phone) {
     return cleaned;
 }
 
-app.post('/api/guests', async (req, res) => {
-    const { nome, apelido, celular, idade, sexo, dependentes, tipo_evento } = req.body;
+app.post('/api/guests', requireAuth, async (req, res) => {
+    const { nome, apelido, celular, idade, sexo, dependentes, tipo_evento, sender_name, artigo } = req.body;
+    if (!nome || !celular) return res.status(400).json({ error: 'Nome e celular são obrigatórios.' });
     const celularFormatado = formatPhone(celular);
     try {
-        // Gerar short_code único
         let short_code;
         do { short_code = generateShortCode(); } while ((await pool.query('SELECT 1 FROM guests WHERE short_code=$1', [short_code])).rowCount > 0);
 
         const result = await pool.query(`
-      INSERT INTO guests (nome, apelido, celular, idade, sexo, dependentes, tipo_evento, short_code)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING *
-    `, [nome, apelido || nome, celularFormatado, idade, sexo, dependentes || 0, tipo_evento || 'Save the Date', short_code]);
+            INSERT INTO guests (nome, apelido, celular, idade, sexo, dependentes, tipo_evento, short_code, sender_name, artigo)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING *
+        `, [nome, apelido || nome, celularFormatado, idade || null, sexo || null, dependentes || 0,
+            tipo_evento || 'Save the Date', short_code, sender_name || null, artigo || null]);
         res.status(201).json(result.rows[0]);
     } catch (err) {
         if (err.code === '23505') {
@@ -1272,9 +1356,506 @@ app.post('/api/event/finalize-phase', requireAuth, async (req, res) => {
     }
 });
 
-// --- Fallback do React Router (SPAs) DEPOIS das APIS ---
+// =============================================================================
+// ── MÓDULO CONVITE: Configurações ───────────────────────────────────────────
+// =============================================================================
+
+// Multer para imagens de capa do convite
+const coverStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'covers')),
+    filename: (req, file, cb) => cb(null, `cover_${Date.now()}${path.extname(file.originalname)}`)
+});
+const uploadCover = multer({ storage: coverStorage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Servir imagens de capa
+app.use('/uploads/covers', express.static(path.join(__dirname, 'uploads', 'covers')));
+
+// GET configurações do convite
+app.get('/api/invite/config', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM invite_configs LIMIT 1');
+        res.json(result.rows[0] || {});
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST salvar configurações do convite
+app.post('/api/invite/config', requireAuth, async (req, res) => {
+    const { event_name, event_date, event_time, event_location, event_location_map_url,
+        event_address, honoree_name,
+        dress_code, message, color_primary, color_accent, whatsapp_msg_template } = req.body;
+    try {
+        await pool.query(`
+            UPDATE invite_configs SET
+                event_name=$1, event_date=$2, event_time=$3, event_location=$4,
+                event_location_map_url=$5, dress_code=$6, message=$7,
+                color_primary=$8, color_accent=$9, whatsapp_msg_template=$10,
+                event_address=$11, honoree_name=$12,
+                updated_at=NOW()
+            WHERE id=(SELECT id FROM invite_configs LIMIT 1)
+        `, [event_name, event_date || null, event_time, event_location,
+            event_location_map_url, dress_code, message,
+            color_primary || '#1e293b', color_accent || '#f59e0b',
+            whatsapp_msg_template || null,
+            event_address || null, honoree_name || null]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST upload de imagem de capa do convite
+app.post('/api/invite/cover', requireAuth, uploadCover.single('cover'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'Nenhuma imagem enviada.' });
+        const coverFile = req.file.filename;
+        await pool.query(`UPDATE invite_configs SET cover_image=$1, updated_at=NOW() WHERE id=(SELECT id FROM invite_configs LIMIT 1)`, [coverFile]);
+        res.json({ success: true, file: coverFile, path: `/uploads/covers/${coverFile}` });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =============================================================================
+// ── MÓDULO CONVITE: Lista de Convidados qualificados ─────────────────────────
+// =============================================================================
+
+// GET convidados qualificados para o Convite (Confirmado + Duvida no STD)
+app.get('/api/invite/guests', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT *, 
+                   CASE WHEN status_convite IS NULL THEN 'pendente' ELSE status_convite END as status_convite_resolved
+            FROM guests 
+            WHERE status IN ('Confirmado', 'Duvida')
+            ORDER BY nome ASC
+        `);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET estatísticas do convite
+app.get('/api/invite/stats', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida')) as qualificados,
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida') AND status_convite = 'enviado') as convites_enviados,
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida') AND status_convite = 'aberto') as convites_abertos,
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida') AND status_checkin = 'presente') as presentes,
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida') AND status_convite IN ('pendente', 'enviado') AND status_checkin = 'ausente') as faltaram,
+                COUNT(*) FILTER (WHERE status = 'Confirmado') as confirmados_std,
+                COUNT(*) FILTER (WHERE status = 'Duvida') as duvida_std
+            FROM guests
+        `);
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST rastrear abertura do convite
+app.post('/api/guests/:id/open-convite', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query(`
+            UPDATE guests 
+            SET status_convite = CASE WHEN status_convite = 'pendente' THEN 'aberto' ELSE status_convite END,
+                data_convite_aberto = COALESCE(data_convite_aberto, NOW())
+            WHERE id = $1
+        `, [id]);
+        await pool.query(`INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, 'CONVITE_ABERTO', 'Convidado abriu o link do convite')`, [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =============================================================================
+// ── MÓDULO CONVITE: Página pública do convite ─────────────────────────────────
+// =============================================================================
+
+// GET dados públicos do convite por short_code (sem autenticação — acesso do convidado)
+app.get('/api/convite/:code', async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    try {
+        const guestRes = await pool.query(
+            `SELECT id, nome, apelido, dependentes, status, status_convite, status_checkin, short_code 
+             FROM guests WHERE short_code = $1`,
+            [code]
+        );
+        if (guestRes.rows.length === 0) return res.status(404).json({ error: 'Convite não encontrado.' });
+        const guest = guestRes.rows[0];
+
+        const inviteRes = await pool.query('SELECT * FROM invite_configs LIMIT 1');
+        const invite = inviteRes.rows[0] || {};
+        const baseUrl = process.env.PUBLIC_URL || 'https://familia-rein.cloud';
+        const conviteUrl = `${baseUrl}/convite/${code}`;
+
+        res.json({
+            guest: {
+                id: guest.id,
+                nome: guest.nome,
+                apelido: guest.apelido || null,
+                dependentes: guest.dependentes || 0,
+                short_code: guest.short_code,
+                status_checkin: guest.status_checkin,
+                status_convite: guest.status_convite || 'pendente',
+            },
+            invite: {
+                event_name: invite.event_name,
+                event_date: invite.event_date,
+                event_time: invite.event_time,
+                event_location: invite.event_location,
+                event_location_map_url: invite.event_location_map_url,
+                dress_code: invite.dress_code,
+                message: invite.message,
+                cover_image: invite.cover_image ? `${baseUrl}/uploads/covers/${invite.cover_image}` : null,
+                color_primary: invite.color_primary || '#1e293b',
+                color_accent: invite.color_accent || '#f59e0b',
+            },
+            qr_url: conviteUrl,
+        });
+
+        // Marcar como aberto em background
+        pool.query(
+            `UPDATE guests SET status_convite = CASE WHEN status_convite = 'pendente' THEN 'aberto' ELSE status_convite END, data_convite_aberto = COALESCE(data_convite_aberto, NOW()) WHERE id = $1`,
+            [guest.id]
+        ).catch(() => { });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST RSVP público — convidado confirma ou recusa pelo link do convite
+app.post('/api/convite/:code/rsvp', async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const { resposta } = req.body; // 'confirmado' | 'recusado'
+    if (!['confirmado', 'recusado'].includes(resposta)) {
+        return res.status(400).json({ error: 'Resposta inválida. Use: confirmado ou recusado' });
+    }
+    try {
+        const guestRes = await pool.query(
+            `SELECT id, nome, status_convite FROM guests WHERE short_code = $1`, [code]
+        );
+        if (guestRes.rows.length === 0) return res.status(404).json({ error: 'Convite não encontrado.' });
+        const guest = guestRes.rows[0];
+
+        // Não permite alterar se já fez check-in
+        if (guest.status_checkin === 'presente') {
+            return res.json({ success: true, status_convite: 'confirmado', msg: 'Você já está registado como presente. Bem-vindo(a)!' });
+        }
+
+        await pool.query(
+            `UPDATE guests SET 
+                status_convite = $1,
+                data_convite_aberto = COALESCE(data_convite_aberto, NOW())
+             WHERE short_code = $2`,
+            [resposta, code]
+        );
+        await pool.query(
+            `INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, $2, $3)`,
+            [guest.id, resposta === 'confirmado' ? 'CONVITE_CONFIRMADO' : 'CONVITE_RECUSADO',
+            `Convidado ${resposta === 'confirmado' ? 'confirmou' : 'recusou'} a presença pelo link do convite`]
+        );
+        res.json({
+            success: true,
+            status_convite: resposta,
+            msg: resposta === 'confirmado'
+                ? `🎉 Confirmação registada! Até ${guest.nome.split(' ')[0]}!`
+                : `Lamentamos que não possa vir. A sua resposta foi registada.`
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET lista de presentes na festa (para polling em tempo real no módulo Convite)
+app.get('/api/checkin/presentes', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                g.id, g.nome, g.apelido, g.dependentes, g.short_code,
+                g.sender_name, g.data_checkin,
+                (1 + COALESCE(g.dependentes, 0)) as total_pessoas,
+                cl.scanned_by
+            FROM guests g
+            LEFT JOIN LATERAL (
+                SELECT scanned_by FROM checkin_log 
+                WHERE guest_id = g.id ORDER BY created_at DESC LIMIT 1
+            ) cl ON true
+            WHERE g.status_checkin = 'presente'
+            ORDER BY g.data_checkin ASC NULLS LAST
+        `);
+        const totalPessoas = result.rows.reduce((acc, g) => acc + (g.total_pessoas || 1), 0);
+        res.json({ presentes: result.rows, totalPessoas, total: result.rows.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// =============================================================================
+// ── MÓDULO CONVITE: Disparo WhatsApp do Convite ───────────────────────────────
+// =============================================================================
+
+// POST disparar convite WhatsApp (multi-sender, igual ao STD)
+app.post('/api/invite/send/:guestId', requireAuth, async (req, res) => {
+    const { guestId } = req.params;
+    try {
+        // Buscar convidado + conta remetente (via sender_name)
+        const guestRes = await pool.query(`
+            SELECT g.*, 
+                   sa.instance_name, 
+                   sa.nome as sender_display_name, 
+                   sa.daily_count, 
+                   sa.daily_limit,
+                   sa.id as sender_id,
+                   sa.artigo as sender_artigo
+            FROM guests g
+            LEFT JOIN sender_accounts sa ON sa.nome = g.sender_name
+            WHERE g.id = $1
+        `, [guestId]);
+        if (guestRes.rows.length === 0) return res.status(404).json({ error: 'Convidado não encontrado.' });
+        const guest = guestRes.rows[0];
+
+        const inviteRes = await pool.query('SELECT * FROM invite_configs LIMIT 1');
+        const invite = inviteRes.rows[0] || {};
+        const baseUrl = process.env.PUBLIC_URL || 'https://familia-rein.cloud';
+        const link = `${baseUrl}/convite/${guest.short_code}`;
+
+        // Montar mensagem — usa nome (campo principal)
+        const nomeExibir = guest.nome;
+        const senderDisplay = guest.sender_display_name || guest.sender_name || '';
+        const artigo = guest.sender_artigo || 'o/a';
+        const instanceName = guest.instance_name || DEFAULT_INSTANCE;
+
+        // Verificar limite diário
+        if (guest.sender_id && guest.daily_count >= guest.daily_limit) {
+            return res.status(429).json({ error: `Limite diário atingido para ${senderDisplay} (${guest.daily_limit} envios/dia). Tente amanhã.` });
+        }
+
+        // Template com fallback inteligente
+        const templateBase = invite.whatsapp_msg_template ||
+            `Olá *{{nome}}*!\n\n{{intro}} com o prazer de te convidar para *{{event_name}}*.\n\n📍 Local: {{event_location}}\n📅 Data: {{event_date}}\n👗 Dress Code: {{dress_code}}\n\nAcesse seu convite com QR Code de entrada:\n{{link}}\n\nApresente o QR Code na entrada. Até lá! 🥂`;
+
+        const intro = senderDisplay
+            ? `${artigo} *${senderDisplay}* tem`
+            : `Nós temos`;
+
+        const message = templateBase
+            .replace(/\{\{nome\}\}/g, nomeExibir)
+            .replace(/\{\{apelido\}\}/g, guest.apelido || nomeExibir)
+            .replace(/\{\{intro\}\}/g, intro)
+            .replace(/\{\{event_name\}\}/g, invite.event_name || 'o evento')
+            .replace(/\{\{event_location\}\}/g, invite.event_location || 'a definir')
+            .replace(/\{\{event_date\}\}/g, invite.event_date ? new Date(invite.event_date).toLocaleDateString('pt-BR') : 'a definir')
+            .replace(/\{\{dress_code\}\}/g, invite.dress_code || 'a definir')
+            .replace(/\{\{link\}\}/g, link);
+
+        const cleanPhone = guest.celular.replace(/\D/g, '');
+        const numberE164 = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+        // Envio via instância correcta do remetente
+        if (useCloudAPI()) {
+            const resp = await fetch(`https://graph.facebook.com/${WA_CLOUD_API_VERSION}/${WA_CLOUD_PHONE_ID}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${WA_CLOUD_TOKEN}` },
+                body: JSON.stringify({ messaging_product: 'whatsapp', to: numberE164, type: 'text', text: { body: message } })
+            });
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                return res.status(500).json({ error: 'Cloud API rejeitou o envio.', details: errData });
+            }
+        } else {
+            // Evolution API: usa a instância do remetente (sender_name do convidado)
+            const stateResp = await fetch(`${EVOLUTION_URL}/instance/connectionState/${instanceName}`, {
+                headers: { 'apikey': EVOLUTION_API_KEY }
+            });
+            const stateData = await stateResp.json().catch(() => ({}));
+            if (stateData?.instance?.state !== 'open') {
+                return res.status(503).json({
+                    error: `Instância "${instanceName}" (${senderDisplay || 'default'}) não está conectada. Verifique o WhatsApp na aba de configurações.`
+                });
+            }
+
+            const sendResp = await fetch(`${EVOLUTION_URL}/message/sendText/${instanceName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': EVOLUTION_API_KEY },
+                body: JSON.stringify({
+                    number: numberE164,
+                    options: { delay: 1500, presence: 'composing' },
+                    textMessage: { text: message }
+                })
+            });
+            if (!sendResp.ok) {
+                const errData = await sendResp.json().catch(() => ({}));
+                await pool.query(`UPDATE guests SET status_convite='pendente' WHERE id=$1`, [guestId]);
+                return res.status(500).json({ error: 'Evolution API rejeitou o envio.', details: errData });
+            }
+        }
+
+        // Actualizar convidado e contagem da conta remetente
+        await pool.query(
+            `UPDATE guests SET status_convite='enviado', data_convite_enviado=NOW() WHERE id=$1`,
+            [guestId]
+        );
+        await pool.query(
+            `INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, 'CONVITE_ENVIADO', $2)`,
+            [guestId, `Convite enviado via instância ${instanceName} (${senderDisplay || 'default'}) para ${numberE164}`]
+        );
+        if (guest.sender_id) {
+            await pool.query(`UPDATE sender_accounts SET daily_count = daily_count + 1 WHERE id=$1`, [guest.sender_id]);
+        }
+
+        res.json({
+            success: true,
+            message: `Convite enviado para ${nomeExibir} via ${senderDisplay || instanceName}! ✅`,
+            sender: senderDisplay || instanceName,
+            instance: instanceName
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =============================================================================
+// ── MÓDULO CHECK-IN: Rotas ───────────────────────────────────────────────────
+// =============================================================================
+
+// POST registar check-in por short_code (sem autenticação — operado na entrada)
+app.post('/api/checkin/:code', async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    const { scanned_by, device_info } = req.body;
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const guestRes = await client.query(
+            `SELECT id, nome, apelido, dependentes, status, status_checkin, checkin_count, short_code 
+             FROM guests WHERE short_code = $1`,
+            [code]
+        );
+        if (guestRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'QR Code não encontrado na lista de convidados.' });
+        }
+        const guest = guestRes.rows[0];
+        const jaFezCheckin = guest.checkin_count > 0;
+
+        // Registar no log independentemente (útil para auditoria)
+        await client.query(
+            `INSERT INTO checkin_log (guest_id, scanned_by, device_info) VALUES ($1, $2, $3)`,
+            [guest.id, scanned_by || 'operador', device_info || null]
+        );
+
+        // Actualizar status do convidado
+        await client.query(
+            `UPDATE guests SET 
+                status_checkin = 'presente', 
+                data_checkin = COALESCE(data_checkin, NOW()),
+                checkin_count = checkin_count + 1
+             WHERE id = $1`,
+            [guest.id]
+        );
+
+        await client.query(
+            `INSERT INTO guests_history (guest_id, acao, detalhes) VALUES ($1, 'CHECKIN', $2)`,
+            [guest.id, `Check-in #${guest.checkin_count + 1} registado por ${scanned_by || 'operador'}`]
+        );
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            already_checked_in: jaFezCheckin,
+            guest: {
+                nome: guest.nome,
+                apelido: guest.apelido || guest.nome,
+                dependentes: guest.dependentes || 0,
+                status: guest.status,
+                checkin_count: guest.checkin_count + 1,
+            },
+            message: jaFezCheckin
+                ? `⚠️ ${guest.apelido || guest.nome} já fez check-in anteriormente (${guest.checkin_count}x). Registo adicional guardado.`
+                : `✅ ${guest.apelido || guest.nome} confirmado! ${(guest.dependentes || 0) > 0 ? `+${guest.dependentes} dependente(s)` : ''}`
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// GET estatísticas ao vivo do check-in (para o painel do operador)
+app.get('/api/checkin/stats', requireAuth, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida')) as total_esperado,
+                SUM(CASE WHEN status IN ('Confirmado', 'Duvida') THEN 1 + COALESCE(dependentes, 0) ELSE 0 END) as total_com_deps,
+                COUNT(*) FILTER (WHERE status_checkin = 'presente') as total_presentes,
+                SUM(CASE WHEN status_checkin = 'presente' THEN 1 + COALESCE(dependentes, 0) ELSE 0 END) as presentes_com_deps,
+                COUNT(*) FILTER (WHERE status IN ('Confirmado', 'Duvida') AND status_checkin = 'ausente') as ainda_ausentes
+            FROM guests
+        `);
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET log recente de check-ins (últimas entradas)
+app.get('/api/checkin/log', requireAuth, async (req, res) => {
+    const limit = parseInt(req.query.limit) || 20;
+    try {
+        const result = await pool.query(`
+            SELECT cl.created_at, cl.scanned_by, g.nome, g.apelido, g.dependentes, g.status, g.checkin_count
+            FROM checkin_log cl
+            JOIN guests g ON g.id = cl.guest_id
+            ORDER BY cl.created_at DESC
+            LIMIT $1
+        `, [limit]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET verificar convidado por short_code (para pré-validação sem check-in)
+app.get('/api/checkin/verify/:code', async (req, res) => {
+    const code = req.params.code.toUpperCase();
+    try {
+        const result = await pool.query(
+            `SELECT nome, apelido, dependentes, status, status_checkin, checkin_count FROM guests WHERE short_code = $1`,
+            [code]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ found: false });
+        const g = result.rows[0];
+        res.json({ found: true, ...g });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// =============================================================================
+// ── Fallback do React Router (SPAs) DEPOIS das APIS ──────────────────────────
+// =============================================================================
 app.get('/admin/*', (req, res) => {
     res.sendFile(path.join(__dirname, '../apps/admin/dist', 'index.html'));
+});
+// Nova SPA pública do Convite
+app.get('/convite/*', (req, res) => {
+    const conviteDist = path.join(__dirname, '../apps/convite/dist', 'index.html');
+    if (fs.existsSync(conviteDist)) {
+        res.sendFile(conviteDist);
+    } else {
+        // Fallback enquanto a SPA ainda não foi compilada
+        res.sendFile(path.join(__dirname, '../apps/web/dist', 'index.html'));
+    }
 });
 app.get('*', (req, res) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return res.status(404).json({ error: 'Not found' });

@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: #0f0f0f;
+  color: white;
+  margin: 0;
+  padding: 0;
+}
+
+.qr-download-btn {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.qr-download-btn:active {
+  transform: scale(0.95);
+}

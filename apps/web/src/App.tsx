@@ -351,14 +351,19 @@ export default function App() {
               </div>
 
               <div className="space-y-2 mb-6">
+                <p className="text-rose-400/80 text-[10px] font-black uppercase tracking-[0.25em]">
+                  {config.honorees ? 'SAVE THE DATE' : 'MOMENTO ESPECIAL'}
+                </p>
                 {config.honorees && (
-                  <p className="text-rose-400 text-xs font-black uppercase tracking-widest">{config.honorees}</p>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-none mt-1 mb-2">
+                    {config.honorees}
+                  </h2>
                 )}
-                <h2 className="text-4xl font-serif tracking-tight text-slate-900">
+                <h3 className="text-xl font-black text-slate-700 tracking-tight leading-none">
                   {config.event_name || 'Família Rein'}
-                </h2>
+                </h3>
                 {config.slogan && (
-                  <p className="text-slate-600 text-sm italic">"{config.slogan}"</p>
+                  <p className="text-slate-500 text-sm font-medium mt-2">"{config.slogan}"</p>
                 )}
                 <p className="text-slate-500 text-sm leading-relaxed px-2 font-medium">
                   Estamos preparando algo inesquecível e sua presença é o que torna tudo real.
